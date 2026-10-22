@@ -32,7 +32,10 @@ h1, h2, p { margin: 0; }
   background: var(--bg);
   border-bottom: 1px solid var(--line);
 }
-.brand { font-weight: 500; text-decoration: none; letter-spacing: 0.08em; }
+.brand { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; text-decoration: none; }
+.brand img { display: block; }
+.brand .label { font-size: 13px; font-weight: 500; letter-spacing: 0.14em; }
+.cursor { display: inline-block; width: 0.55em; height: 1em; margin-left: -4px; background: var(--accent); font-size: 13px; }
 .topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; }
 .topbar-actions form { margin: 0; }
 

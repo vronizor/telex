@@ -9,11 +9,16 @@
 <link rel="stylesheet" href="/static/themes/{{ theme }}.css?v={{ static_version }}">
 <link rel="stylesheet" href="/static/app.css?v={{ static_version }}">
 <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<meta name="theme-color" content="#0d1117">
 <script src="/static/app.js?v={{ static_version }}" defer></script>
 </head>
 <body>
 <header class="topbar">
-  <a class="brand label" href="/">Telex</a>
+  <a class="brand" href="/" aria-label="Telex, home">
+    <img src="/static/icon.svg" width="22" height="22" alt="">
+    <span class="label">Telex</span><span class="cursor" aria-hidden="true"></span>
+  </a>
   <nav class="topbar-actions">
     <a class="btn btn-ghost label" href="/#new">+ New</a>
     <button class="btn btn-ghost icon" type="button" data-theme-toggle aria-label="Switch light or dark theme">◐</button>

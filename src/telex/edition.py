@@ -26,14 +26,42 @@ from telex.store import (
 
 log = logging.getLogger(__name__)
 
-FORMAT_VERSION = "3"
+FORMAT_VERSION = "4"
 EDITION_NAME = "Telex Weekly"
 FONTS = Path(__file__).parent / "static" / "fonts"
 TAGS = {"update": "UPD", "baseline": "NEW", "quiet": "QUIET"}
 DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 LATEST_ONLY = {"where it stands", "watch next"}
 STATE_ORDER = {"update": 0, "baseline": 1, "quiet": 2}
-MAX_COVER_TOPICS = 7
+MAX_COVER_TOPICS = 6
+ITA2 = {
+    "A": "11000",
+    "B": "10011",
+    "C": "01110",
+    "D": "10010",
+    "E": "10000",
+    "F": "10110",
+    "G": "01011",
+    "H": "00101",
+    "I": "01100",
+    "J": "11010",
+    "K": "11110",
+    "L": "01001",
+    "M": "00111",
+    "N": "00110",
+    "O": "00011",
+    "P": "01101",
+    "Q": "11101",
+    "R": "01010",
+    "S": "10100",
+    "T": "00001",
+    "U": "11100",
+    "V": "01111",
+    "W": "11001",
+    "X": "10111",
+    "Y": "10101",
+    "Z": "10001",
+}
 
 CSS = (Path(__file__).parent / "static" / "epub.css").read_text()
 
@@ -265,6 +293,19 @@ def _fit(draw: ImageDraw.ImageDraw, text: str, font, width: int) -> str:
     return text.rstrip() + "…"
 
 
+def draw_tape(d: ImageDraw.ImageDraw, word: str, x0: int, top: int, pitch: int) -> None:
+    """Punch `word` in ITA2: five data rows with the feed row between bits 3 and 4."""
+    rows = [top + pitch * i for i in (1, 2, 3, 5, 6)]
+    feed_y = top + pitch * 4
+    r, feed_r = pitch * 0.38, pitch * 0.19
+    for i, letter in enumerate(word.upper()):
+        x = x0 + i * pitch * 2.5
+        d.ellipse((x - feed_r, feed_y - feed_r, x + feed_r, feed_y + feed_r), fill=255)
+        for bit, y in zip(ITA2.get(letter, "00000"), rows, strict=True):
+            if bit == "1":
+                d.ellipse((x - r, y - r, x + r, y + r), fill=255)
+
+
 def make_cover(edition: Edition) -> bytes:
     w, h, m = 1072, 1448, 72
     img = Image.new("L", (w, h), 255)
@@ -275,13 +316,14 @@ def make_cover(edition: Edition) -> bytes:
     small = _font("ibm-plex-sans-latin-400-normal.woff2", 28)
     big = _font("ibm-plex-sans-latin-600-normal.woff2", 92)
 
-    d.rectangle((0, 0, w, 130), fill=0)
-    d.text((m, 65), EDITION_NAME.upper(), font=mono, fill=255, anchor="lm")
-    d.text((w - m, 65), f"WEEK {edition.week}", font=mono, fill=255, anchor="rm")
-    d.text((m, 230), edition.range_label, font=big, fill=0, anchor="lm")
-    d.line((m, 330, w - m, 330), fill=0, width=3)
+    band = 176
+    d.rectangle((0, 0, w, band), fill=150)
+    draw_tape(d, "TELEX", m + 20, 4, 24)
+    d.text((w - m, band // 2), f"WEEKLY · WEEK {edition.week}", font=mono, fill=0, anchor="rm")
+    d.text((m, 270), edition.range_label, font=big, fill=0, anchor="lm")
+    d.line((m, 370, w - m, 370), fill=0, width=3)
 
-    y = 400
+    y = 440
     tag_w = 150
     for t in edition.topics[:MAX_COVER_TOPICS]:
         tag = TAGS[t.state]
