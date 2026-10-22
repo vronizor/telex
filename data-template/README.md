@@ -1,6 +1,6 @@
-# briefings-data
+# telex-data
 
-Private data for the Briefings app: topics, reports and the instructions for the daily dispatcher run.
+Private data for the Telex app: topics, reports and the instructions for the daily dispatcher run.
 
 ```
 topics/<id>.toml           one file per topic (title, cadence, slot, languages, active, created, brief)

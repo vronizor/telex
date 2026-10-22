@@ -13,8 +13,8 @@ from pathlib import Path
 from ebooklib import epub
 from PIL import Image, ImageDraw, ImageFont
 
-from briefings.config import Settings, get_settings
-from briefings.store import (
+from telex.config import Settings, get_settings
+from telex.store import (
     STORY,
     Report,
     Store,
@@ -26,7 +26,8 @@ from briefings.store import (
 
 log = logging.getLogger(__name__)
 
-FORMAT_VERSION = "2"
+FORMAT_VERSION = "3"
+EDITION_NAME = "Telex Weekly"
 FONTS = Path(__file__).parent / "static" / "fonts"
 TAGS = {"update": "UPD", "baseline": "NEW", "quiet": "QUIET"}
 DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
@@ -101,7 +102,7 @@ class Edition:
 
     @property
     def title(self) -> str:
-        return f"Briefings · {self.range_label}"
+        return f"{EDITION_NAME} · {self.range_label}"
 
     @property
     def summary(self) -> str:
@@ -225,7 +226,7 @@ def chapter(t: TopicWeek) -> str:
 
 def contents(edition: Edition, chapter_files: list[str], next_day: date) -> str:
     parts = [
-        f'<p class="label">Briefings · week {edition.week}</p>',
+        f'<p class="label">{EDITION_NAME} · week {edition.week}</p>',
         f"<h1>{edition.range_label}</h1>",
         f'<p class="label">{escape(edition.summary)}</p>',
         '<h2 class="sec">── This week</h2>',
@@ -275,7 +276,7 @@ def make_cover(edition: Edition) -> bytes:
     big = _font("ibm-plex-sans-latin-600-normal.woff2", 92)
 
     d.rectangle((0, 0, w, 130), fill=0)
-    d.text((m, 65), "BRIEFINGS", font=mono, fill=255, anchor="lm")
+    d.text((m, 65), EDITION_NAME.upper(), font=mono, fill=255, anchor="lm")
     d.text((w - m, 65), f"WEEK {edition.week}", font=mono, fill=255, anchor="rm")
     d.text((m, 230), edition.range_label, font=big, fill=0, anchor="lm")
     d.line((m, 330, w - m, 330), fill=0, width=3)
@@ -332,10 +333,10 @@ def build(edition: Edition, settings: Settings) -> dict:
     next_day = edition.day + timedelta(days=7)
 
     book = epub.EpubBook()
-    book.set_identifier(f"briefings-{stem}")
+    book.set_identifier(f"telex-weekly-{stem}")
     book.set_title(edition.title)
     book.set_language("en")
-    book.add_author("Briefings")
+    book.add_author("Telex")
     cover = make_cover(edition)
     book.set_cover("cover.png", cover)
     book.add_item(
@@ -407,7 +408,7 @@ def list_editions(settings: Settings, limit: int = 52) -> list[dict]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="briefings.edition")
+    parser = argparse.ArgumentParser(prog="telex.edition")
     parser.add_argument("--date", type=date.fromisoformat, help="edition date (default: latest)")
     args = parser.parse_args(argv)
     settings = get_settings()

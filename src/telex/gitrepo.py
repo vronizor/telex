@@ -35,7 +35,7 @@ class Repo:
         if (self.path / ".git").exists():
             return
         if not self.url:
-            raise GitError(f"no checkout at {self.path} and BRIEFINGS_REPO_URL is not set")
+            raise GitError(f"no checkout at {self.path} and TELEX_REPO_URL is not set")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         result = subprocess.run(
             ["git", "clone", self.url, str(self.path)], capture_output=True, text=True, timeout=300

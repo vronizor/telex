@@ -2,8 +2,8 @@ import zipfile
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from briefings import app as app_module
-from briefings import edition
+from telex import app as app_module
+from telex import edition
 
 TZ = ZoneInfo("Europe/Madrid")
 
@@ -69,11 +69,11 @@ def test_multiple_reports_in_a_week(client):
 
 def test_opds_feed_and_files(client):
     edition.ensure(app_module.store, app_module.settings, date(2026, 10, 17))
-    r = client.get("/opds/", headers={"x-forwarded-host": "briefings.my-tailnet.ts.net"})
+    r = client.get("/opds/", headers={"x-forwarded-host": "telex.my-tailnet.ts.net"})
     assert r.status_code == 200
     assert "opds-catalog" in r.headers["content-type"]
-    assert "https://briefings.my-tailnet.ts.net/opds/edition/2026-10-17.epub" in r.text
-    assert "Briefings · 11–17 Oct 2026" in r.text
+    assert "https://telex.my-tailnet.ts.net/opds/edition/2026-10-17.epub" in r.text
+    assert "Telex Weekly · 11–17 Oct 2026" in r.text
     epub_r = client.get("/opds/edition/2026-10-17.epub")
     assert epub_r.status_code == 200 and epub_r.content[:2] == b"PK"
     assert client.get("/opds/cover/2026-10-17.png").content[:4] == b"\x89PNG"

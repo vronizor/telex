@@ -7,7 +7,7 @@ import pytest
 
 DATA_TEMPLATE = Path(__file__).parent.parent / "data-template"
 
-os.environ.setdefault("BRIEFINGS_DATA_DIR", "/nonexistent")
+os.environ.setdefault("TELEX_DATA_DIR", "/nonexistent")
 
 REPORT_UPDATE = """+++
 status = "update"
@@ -97,10 +97,10 @@ def remote(tmp_path):
 def client(tmp_path, remote, monkeypatch):
     from fastapi.testclient import TestClient
 
-    from briefings import app as app_module
-    from briefings.config import Settings
-    from briefings.gitrepo import Repo
-    from briefings.store import Store
+    from telex import app as app_module
+    from telex.config import Settings
+    from telex.gitrepo import Repo
+    from telex.store import Store
 
     base = app_module.settings
     settings = Settings(
@@ -117,7 +117,7 @@ def client(tmp_path, remote, monkeypatch):
         app_module, "repo", Repo(settings.checkout, str(remote), "test", "test@example.org")
     )
     monkeypatch.setattr(app_module, "store", Store(settings))
-    with TestClient(app_module.app, base_url="http://briefings.test") as c:
+    with TestClient(app_module.app, base_url="http://telex.test") as c:
         yield c
 
 

@@ -2,17 +2,17 @@
 <feed xmlns="http://www.w3.org/2005/Atom"
       xmlns:dc="http://purl.org/dc/terms/"
       xmlns:opds="http://opds-spec.org/2010/catalog">
-  <id>urn:briefings:editions</id>
-  <title>Briefings</title>
+  <id>urn:telex:editions</id>
+  <title>{{ edition_name }}</title>
   <updated>{{ updated }}</updated>
-  <author><name>Briefings</name></author>
+  <author><name>Telex</name></author>
   <link rel="self" href="{{ base }}/opds/" type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
   <link rel="start" href="{{ base }}/opds/" type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
   {% for e in editions %}
   <entry>
-    <id>urn:briefings:edition:{{ e.day }}</id>
+    <id>urn:telex:edition:{{ e.day }}</id>
     <title>{{ e.title }}</title>
-    <author><name>Briefings</name></author>
+    <author><name>Telex</name></author>
     <updated>{{ e.built_at }}</updated>
     <published>{{ e.built_at }}</published>
     <summary>{{ e.summary }}</summary>

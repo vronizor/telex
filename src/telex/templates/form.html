@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ "Edit " ~ topic.title if topic else "New topic" }} · Briefings{% endblock %}
+{% block title %}{{ "Edit " ~ topic.title if topic else "New topic" }} · Telex{% endblock %}
 {% block content %}
 <a class="back label" href="{{ '/t/' ~ topic.id if topic else '/' }}">← {{ "Back" if topic else "All topics" }}</a>
 <h1 class="headline">{{ "Edit topic" if topic else "New topic" }}</h1>

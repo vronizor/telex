@@ -1,5 +1,5 @@
 [project]
-name = "briefings"
+name = "telex"
 version = "0.1.0"
 description = "Self-hosted reader for scheduled news briefings kept in a git repository"
 requires-python = ">=3.12"

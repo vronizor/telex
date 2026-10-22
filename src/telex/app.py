@@ -17,10 +17,10 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from briefings import edition
-from briefings.config import get_settings
-from briefings.gitrepo import GitError, Repo
-from briefings.store import Store, Topic
+from telex import edition
+from telex.config import get_settings
+from telex.gitrepo import GitError, Repo
+from telex.store import Store, Topic
 
 HERE = Path(__file__).parent
 STATIC_DIR = HERE / "static"
@@ -28,10 +28,10 @@ templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.globals["static_version"] = hashlib.sha256(
     b"".join(p.read_bytes() for p in sorted(STATIC_DIR.rglob("*.*")))
 ).hexdigest()[:10]
-SEEN_COOKIE = "briefings_seen"
+SEEN_COOKIE = "telex_seen"
 SEEN_GRACE = timedelta(hours=1)
 ORDER = {"update": 0, "baseline": 1, "pending": 2, "quiet": 3, "paused": 4}
-log = logging.getLogger("briefings")
+log = logging.getLogger("telex")
 
 
 def short_date(day: date | None, today: date | None = None) -> str:
@@ -85,7 +85,7 @@ async def lifespan(app: FastAPI):
         await task
 
 
-app = FastAPI(title="Briefings", lifespan=lifespan, docs_url=None, redoc_url=None)
+app = FastAPI(title="Telex", lifespan=lifespan, docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -341,6 +341,7 @@ def opds_feed(request: Request):
     body = templates.get_template("opds.xml").render(
         base=public_base(request),
         editions=editions,
+        edition_name=edition.EDITION_NAME,
         updated=editions[0]["built_at"] if editions else store.now().isoformat(timespec="seconds"),
     )
     return Response(body, media_type="application/atom+xml;profile=opds-catalog;kind=acquisition")
@@ -358,7 +359,7 @@ def opds_epub(day: date):
     return FileResponse(
         edition_file(day, ".epub"),
         media_type="application/epub+zip",
-        filename=f"briefings-{day.isoformat()}.epub",
+        filename=f"telex-weekly-{day.isoformat()}.epub",
     )
 
 

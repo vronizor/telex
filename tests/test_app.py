@@ -1,7 +1,7 @@
 import subprocess
 import tomllib
 
-from briefings.store import render_markdown
+from telex.store import render_markdown
 from tests.conftest import git, remote_file
 
 
@@ -13,7 +13,7 @@ def test_index_lists_topics(client):
     assert "Paris cycling network" in r.text
     assert "1 quiet" in r.text
     assert 'class="c-add">+2' in r.text
-    assert "briefings_seen" in r.headers["set-cookie"]
+    assert "telex_seen" in r.headers["set-cookie"]
 
 
 def test_topic_page_renders_diff(client):
@@ -130,7 +130,7 @@ def test_cross_site_post_refused(client):
     ok = client.post(
         "/sync",
         data={"back": "/"},
-        headers={"origin": "http://briefings.test"},
+        headers={"origin": "http://telex.test"},
         follow_redirects=False,
     )
     assert ok.status_code == 303
@@ -166,8 +166,8 @@ def test_post_through_tailscale_serve(client):
         data={"back": "/"},
         headers={
             "host": "127.0.0.1:8020",
-            "x-forwarded-host": "briefings.my-tailnet.ts.net",
-            "origin": "https://briefings.my-tailnet.ts.net",
+            "x-forwarded-host": "telex.my-tailnet.ts.net",
+            "origin": "https://telex.my-tailnet.ts.net",
         },
         follow_redirects=False,
     )

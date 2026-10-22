@@ -1,18 +1,18 @@
-name: briefings
+name: telex
 
 services:
   app:
     build: .
-    image: briefings-app
+    image: telex-app
     restart: unless-stopped
     env_file: .env
     environment:
-      BRIEFINGS_DATA_DIR: /data
+      TELEX_DATA_DIR: /data
       GIT_SSH_COMMAND: >-
         ssh -i /keys/deploy_key -o IdentitiesOnly=yes
         -o UserKnownHostsFile=/data/known_hosts -o StrictHostKeyChecking=accept-new
     volumes:
-      - ${BRIEFINGS_HOST_DATA_DIR:-./data}:/data
-      - ${BRIEFINGS_DEPLOY_KEY:-./deploy_key}:/keys/deploy_key:ro
+      - ${TELEX_HOST_DATA_DIR:-./data}:/data
+      - ${TELEX_DEPLOY_KEY:-./deploy_key}:/keys/deploy_key:ro
     ports:
       - "127.0.0.1:${APP_PORT:-8020}:8000"

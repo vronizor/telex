@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 
 from markdown_it import MarkdownIt
 
-from briefings.config import Settings
+from telex.config import Settings
 
 MARKS = {"+": "add", "~": "revised", "!": "contested", "-": "removed"}
 MARK_RE = re.compile(r"^\s*[-*]\s+\[([+~!-])\]", re.MULTILINE)
@@ -32,7 +32,7 @@ def dispatch(root: Path) -> ModuleType:
     cached = _dispatch_cache.get(path)
     if cached and cached[0] == mtime:
         return cached[1]
-    spec = importlib.util.spec_from_file_location("briefings_dispatch", path)
+    spec = importlib.util.spec_from_file_location("telex_dispatch", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     _dispatch_cache[path] = (mtime, module)
