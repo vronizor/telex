@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>{% block title %}Briefings{% endblock %}</title>
+<script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="stylesheet" href="/static/app.css?v={{ static_version }}">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<script src="/static/app.js?v={{ static_version }}" defer></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand label" href="/">Briefings</a>
+  <nav class="topbar-actions">
+    <a class="btn btn-ghost label" href="/new">+ New</a>
+    <button class="btn btn-ghost icon" type="button" data-theme-toggle aria-label="Switch light or dark theme">◐</button>
+    <form method="post" action="/sync">
+      <input type="hidden" name="back" value="{{ request.url.path }}">
+      <button class="btn btn-ghost label{% if repo.last_error %} is-error{% endif %}" type="submit"
+        {% if repo.last_error %}title="{{ repo.last_error }}"{% endif %}>
+        {%- if repo.last_error %}Sync failed{% elif repo.last_sync %}Sync {{ repo.last_sync.astimezone(settings.timezone).strftime("%H:%M") }}{% else %}Sync{% endif -%}
+      </button>
+    </form>
+  </nav>
+</header>
+<main class="page">
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

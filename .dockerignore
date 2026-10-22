@@ -1,0 +1,10 @@
+.venv
+.git
+.env
+data
+deploy_key*
+tests
+data-template
+.pytest_cache
+.ruff_cache
+__pycache__

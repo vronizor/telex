@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% from "_macros.html" import item, sched, tag, DAYS %}
+{% block content %}
+<p class="statusline label">
+  {{ today.strftime("%a %d.%m.%y") }} · {{ topics | length }} topics
+  {% if last_report %}· last report {{ last_report | short_date(today) }}{% endif %}
+  · next run {{ next_dispatch | short_date(today) }} {{ settings.dispatch_time.strftime("%H:%M") }}
+</p>
+
+{% if not topics %}
+<section class="empty">
+  <p>No topics yet.</p>
+  <a class="btn btn-primary" href="/new">Add the first one</a>
+</section>
+{% else %}
+
+<section aria-label="Weekly schedule">
+  <div class="week">
+    {% for load in weekly_loads %}
+    <div class="week-day{% if loop.index0 == today.weekday() %} is-today{% endif %}">
+      <span class="label">{{ DAYS[loop.index0] }}</span>
+      <span class="week-load">{{ load if load else "·" }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="week-caption label">
+    Weekly topics per day{% if daily %} · +{{ daily }} daily{% endif %}{% if monthly_days %} · monthly on {{ monthly_days | join(", ") }}{% endif %}
+  </p>
+</section>
+
+{% if fresh %}
+<section>
+  <h2 class="section-label label">── New since {{ since.astimezone(settings.timezone).strftime("%a %H:%M") }}</h2>
+  {% for t in fresh %}{{ item(t, today) }}{% endfor %}
+</section>
+{% endif %}
+
+{% if earlier %}
+<section>
+  <h2 class="section-label label">── {% if fresh %}Earlier{% else %}Latest{% endif %}</h2>
+  {% for t in earlier %}{{ item(t, today) }}{% endfor %}
+</section>
+{% endif %}
+
+{% if quiet %}
+<details class="quiet">
+  <summary class="label">{{ quiet | length }} quiet · {{ quiet | map(attribute="title") | join(", ") }}</summary>
+  {% for t in quiet %}
+  <a class="quiet-row" href="/t/{{ t.id }}">
+    <span>{{ t.title }}</span>
+    <span class="label muted">{{ t.latest.day | short_date(today) }} · {{ sched(t) }}</span>
+  </a>
+  {% endfor %}
+</details>
+{% endif %}
+
+{% if waiting %}
+<section>
+  <h2 class="section-label label">── Waiting</h2>
+  {% for t in waiting %}
+  <a class="quiet-row" href="/t/{{ t.id }}">
+    <span>{{ tag(t.state) }} {{ t.title }}</span>
+    <span class="label muted">{% if t.next_run %}first report {{ t.next_run | short_date(today) }}{% else %}paused{% endif %}</span>
+  </a>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if upcoming %}
+<section>
+  <h2 class="section-label label">── Queue</h2>
+  <div class="queue">
+    {% for t in upcoming %}
+    <span class="label muted">{{ t.next_run | short_date(today) }}</span>
+    <a href="/t/{{ t.id }}">{{ t.title }}</a>
+    <span>{% if t.queued %}<span class="tag tag-queued">REQ</span>{% elif not t.latest %}<span class="tag tag-baseline">NEW</span>{% endif %}</span>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

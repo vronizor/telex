@@ -1,0 +1,36 @@
+[project]
+name = "briefings"
+version = "0.1.0"
+description = "Self-hosted reader for scheduled news briefings kept in a git repository"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "jinja2>=3.1",
+    "markdown-it-py>=3.0",
+    "python-multipart>=0.0.20",
+    "uvicorn>=0.30",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.27",
+    "pytest>=8",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Form"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "data-template/scripts"]

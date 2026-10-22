@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% from "_macros.html" import tag, sched, counts %}
+{% block title %}{{ topic.title }} · Briefings{% endblock %}
+{% block content %}
+<a class="back label" href="/">← All topics</a>
+
+<div class="topic-meta label">
+  {{ tag(report.status if report else topic.state) }}
+  <span>{{ topic.title }}</span>
+  <span class="push">{{ sched(topic) }}</span>
+</div>
+
+{% if report %}
+  {% if topic.latest and report.day != topic.latest.day %}
+  <p class="notice">Reading the {{ report.day | short_date }} report. <a href="/t/{{ topic.id }}">Latest: {{ topic.latest.day | short_date(today) }} →</a></p>
+  {% endif %}
+  <h1 class="headline">{{ report.headline or topic.title }}</h1>
+  <p class="report-meta label">
+    {{ report.day.strftime("%d.%m.%y") }}
+    {% if report.since %} · Δ since {{ report.since.strftime("%d.%m") }}{% endif %}
+    {% if report.status == "update" %} · {{ counts(report.counts) }}{% endif %}
+    · {{ topic.languages | join(",") }}
+  </p>
+  <article class="report report-{{ report.status }}">
+    {{ report.html | safe }}
+  </article>
+{% else %}
+  <h1 class="headline">{{ topic.title }}</h1>
+  <p class="notice">
+    {% if topic.next_run %}No report yet. The first one comes {{ topic.next_run | short_date(today) }} at {{ settings.dispatch_time.strftime("%H:%M") }}.
+    {% else %}No report yet, and the topic is paused.{% endif %}
+  </p>
+{% endif %}
+
+<div class="actions">
+  <form method="post" action="/t/{{ topic.id }}/refresh">
+    <button class="btn btn-primary" type="submit" {% if topic.queued or not topic.active %}disabled{% endif %}>
+      {% if topic.queued %}Refresh requested{% else %}Request refresh{% endif %}
+    </button>
+  </form>
+  <a class="btn" href="/t/{{ topic.id }}/edit">Edit brief</a>
+</div>
+<p class="hint label">
+  {% if topic.next_run %}Next run {{ topic.next_run | short_date(today) }} {{ settings.dispatch_time.strftime("%H:%M") }} · {{ topic.schedule }}{% else %}Paused{% endif %}
+</p>
+
+{% if history | length > 1 %}
+<section>
+  <h2 class="section-label label">── History</h2>
+  <div class="history">
+    {% for r in history %}
+    <a class="history-row{% if report and r.day == report.day %} is-current{% endif %}" href="/t/{{ topic.id }}/r/{{ r.day.isoformat() }}">
+      <span class="label">{{ r.day.strftime("%d.%m.%y") }}</span>
+      <span class="history-headline">{{ r.headline or r.status }}</span>
+      <span>{% if r.status == "update" %}{{ counts(r.counts) }}{% else %}{{ tag(r.status) }}{% endif %}</span>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<details class="brief">
+  <summary class="label">Brief · {{ topic.schedule }} · {{ topic.languages | join(", ") }}</summary>
+  <p>{{ topic.brief }}</p>
+</details>
+{% endblock %}

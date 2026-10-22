@@ -1,0 +1,50 @@
+# Briefings
+
+A small self-hosted reader for news briefings that a scheduled Claude run writes into a private git repository. You define topics (what to follow, how it should be reported, how often, which languages to search in); a daily dispatcher run researches the topics that are due and commits a report per topic that says what changed since the last one; this app shows the reports and lets you add topics or ask for a refresh.
+
+```
+ Claude scheduled task (daily)  ──push reports──▶  private data repo  ◀──pull every 30 min / Sync──  this app (Pi)
+                                ◀──topics, queue──                    ──push topic edits, refreshes──
+```
+
+- **This repo** holds the app and `data-template/`, the starting content of the data repo: `DISPATCHER.md` (what the scheduled run does, house rules, report format) and `scripts/dispatch.py` (scheduling, stdlib only).
+- **The data repo** (private) holds `topics/`, `reports/` and `queue/`. The app imports `scripts/dispatch.py` from its checkout, so the scheduler logic exists once.
+
+## Scheduling
+
+- Weekly topics get the least busy weekday, monthly topics the least busy day 1–28, when created; daily topics run every day.
+- A new topic gets its first report at the next run, whatever its slot. A missed run is caught up the next day.
+- At most 4 topics per run (`MAX_PER_RUN`); refresh requests go first, then first reports, then the most overdue.
+
+## Set up
+
+1. Create two GitHub repositories: `briefings` (this code) and `briefings-data` (**private**).
+2. Initialise the data repo from the template:
+   ```sh
+   cp -r data-template ../briefings-data && cd ../briefings-data
+   git init -b main && git add -A && git commit -m "init from template"
+   git remote add origin git@github.com:<you>/briefings-data.git && git push -u origin main
+   ```
+3. On the Pi, in a clone of this repo, make a deploy key and add `deploy_key.pub` to the **data** repo under Settings → Deploy keys, with **write access**:
+   ```sh
+   ssh-keygen -t ed25519 -f deploy_key -N "" -C briefings-pi && chmod 600 deploy_key
+   ```
+4. `cp .env.example .env`, set `BRIEFINGS_REPO_URL` and the host paths, then `docker compose up -d --build`. The first start clones the data repo into `$BRIEFINGS_HOST_DATA_DIR/repo`. Check with `docker compose logs -f app`.
+5. Put it behind your reverse proxy on the tailnet (it listens on `127.0.0.1:$APP_PORT`). There is no login: it relies on the network being private, and refuses cross-site form posts.
+6. Create the scheduled task (Claude, daily at `BRIEFINGS_DISPATCH_TIME`, Europe/Madrid) with this prompt:
+   > Attach the GitHub repository `<you>/briefings-data` with push access, clone it, and from its root follow `DISPATCHER.md` exactly. Today's date is the current date in Europe/Madrid.
+
+## Deploy updates
+
+`git pull && docker compose up -d --build` on the Pi. Changes to `data-template/` do not reach the data repo by themselves: copy `DISPATCHER.md` or `scripts/dispatch.py` over and commit there.
+
+## Develop
+
+```sh
+uv sync
+uv run pytest                      # app tests against a throwaway bare repo, plus the scheduler tests
+uv run ruff check && uv run ruff format --check
+BRIEFINGS_REPO_URL=/path/to/a/data/repo BRIEFINGS_DATA_DIR=./data uv run uvicorn briefings.app:app --reload
+```
+
+Fonts: IBM Plex Sans and Mono (SIL Open Font License, `src/briefings/static/fonts/OFL.txt`), served locally.

@@ -1,0 +1,36 @@
+{% set TAGS = {"update": "UPD", "baseline": "NEW", "quiet": "QUIET", "pending": "PEND", "paused": "PAUSED"} %}
+{% set DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] %}
+
+{% macro tag(state) -%}
+<span class="tag tag-{{ state }}">{{ TAGS[state] }}</span>
+{%- endmacro %}
+
+{% macro sched(t) -%}
+{%- if t.cadence == "daily" -%}DAILY
+{%- elif t.slot is none -%}{{ "WK" if t.cadence == "weekly" else "MO" }}·?
+{%- elif t.cadence == "weekly" -%}WK·{{ DAYS[t.slot] | upper }}
+{%- else -%}MO·{{ t.slot }}{%- endif -%}
+{%- endmacro %}
+
+{% macro counts(c) -%}
+<span class="counts label">
+{%- if c.add %}<span class="c-add">+{{ c.add }}</span>{% endif -%}
+{%- if c.revised %}<span class="c-revised">~{{ c.revised }}</span>{% endif -%}
+{%- if c.contested %}<span class="c-contested">!{{ c.contested }}</span>{% endif -%}
+{%- if c.removed %}<span class="c-removed">−{{ c.removed }}</span>{% endif -%}
+</span>
+{%- endmacro %}
+
+{% macro item(t, today) -%}
+<a class="item" href="/t/{{ t.id }}">
+  <div class="item-meta label">
+    {{ tag(t.state) }}
+    {% if t.latest %}<span>{{ t.latest.day | short_date(today) }}</span>{% endif %}
+    {% if t.queued %}<span class="tag tag-queued">REQ</span>{% endif %}
+    <span class="push">{{ sched(t) }}</span>
+  </div>
+  <div class="item-topic">{{ t.title }}</div>
+  {% if t.latest and t.latest.headline %}<div class="item-headline">{{ t.latest.headline }}</div>{% endif %}
+  {% if t.latest and t.latest.status == "update" %}{{ counts(t.latest.counts) }}{% endif %}
+</a>
+{%- endmacro %}

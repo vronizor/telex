@@ -1,0 +1,285 @@
+import asyncio
+import hashlib
+from contextlib import asynccontextmanager, suppress
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from urllib.parse import urlsplit
+
+from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+
+from briefings.config import get_settings
+from briefings.gitrepo import GitError, Repo
+from briefings.store import Store, Topic
+
+HERE = Path(__file__).parent
+STATIC_DIR = HERE / "static"
+templates = Jinja2Templates(directory=HERE / "templates")
+templates.env.globals["static_version"] = hashlib.sha256(
+    b"".join(p.read_bytes() for p in sorted(STATIC_DIR.rglob("*.*")))
+).hexdigest()[:10]
+SEEN_COOKIE = "briefings_seen"
+SEEN_GRACE = timedelta(hours=1)
+ORDER = {"update": 0, "baseline": 1, "pending": 2, "quiet": 3, "paused": 4}
+
+
+def short_date(day: date | None, today: date | None = None) -> str:
+    if day is None:
+        return ""
+    if today is not None:
+        delta = (day - today).days
+        if delta == 0:
+            return "today"
+        if delta == 1:
+            return "tomorrow"
+        if delta == -1:
+            return "yesterday"
+    return f"{day:%a} {day.day} {day:%b}"
+
+
+templates.env.filters["short_date"] = short_date
+
+
+settings = get_settings()
+repo = Repo(settings.checkout, settings.repo_url, settings.git_name, settings.git_email)
+store = Store(settings)
+
+
+async def sync_loop() -> None:
+    while True:
+        await asyncio.sleep(settings.sync_minutes * 60)
+        await asyncio.to_thread(repo.pull)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await asyncio.to_thread(repo.ensure)
+    await asyncio.to_thread(repo.pull)
+    task = asyncio.create_task(sync_loop())
+    yield
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
+
+
+app = FastAPI(title="Briefings", lifespan=lifespan, docs_url=None, redoc_url=None)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.middleware("http")
+async def same_origin_posts(request: Request, call_next):
+    origin = request.headers.get("origin")
+    if request.method == "POST" and origin and urlsplit(origin).netloc != request.url.netloc:
+        return PlainTextResponse("Cross-site request refused", status_code=403)
+    return await call_next(request)
+
+
+def render(request: Request, name: str, status_code: int = 200, **context) -> HTMLResponse:
+    now = store.now()
+    context.update(request=request, now=now, today=now.date(), repo=repo, settings=settings)
+    return templates.TemplateResponse(request, name, context, status_code=status_code)
+
+
+def read_seen(request: Request, now: datetime) -> tuple[datetime | None, str]:
+    since, last = None, None
+    raw = request.cookies.get(SEEN_COOKIE, "")
+    with suppress(ValueError):
+        a, b = raw.split("|")
+        since, last = datetime.fromisoformat(a), datetime.fromisoformat(b)
+    if last is None:
+        return None, f"{now.isoformat()}|{now.isoformat()}"
+    if now - last > SEEN_GRACE:
+        since = last
+    return since, f"{since.isoformat()}|{now.isoformat()}"
+
+
+def report_time(day: date) -> datetime:
+    return datetime.combine(day, settings.dispatch_time, settings.timezone)
+
+
+@app.get("/", response_class=HTMLResponse)
+def index(request: Request):
+    now = store.now()
+    since, cookie = read_seen(request, now)
+    topics = store.topics()
+    fresh, earlier, quiet, waiting = [], [], [], []
+    for t in topics:
+        if t.state in ("quiet",):
+            quiet.append(t)
+        elif t.state in ("pending", "paused"):
+            waiting.append(t)
+        elif since is not None and report_time(t.latest.day) > since:
+            fresh.append(t)
+        else:
+            earlier.append(t)
+    newest_first = lambda t: (t.latest.day if t.latest else date.min, t.title)  # noqa: E731
+    for group in (fresh, earlier, quiet):
+        group.sort(key=newest_first, reverse=True)
+    waiting.sort(key=lambda t: (ORDER[t.state], t.title))
+    upcoming = sorted((t for t in topics if t.next_run), key=lambda t: (t.next_run, t.title))
+    daily = sum(1 for t in topics if t.active and t.cadence == "daily")
+    monthly_days = sorted(
+        {t.slot for t in topics if t.active and t.cadence == "monthly" and t.slot}
+    )
+    last_report = max((t.latest.day for t in topics if t.latest), default=None)
+    response = render(
+        request,
+        "index.html",
+        topics=topics,
+        since=since,
+        fresh=fresh,
+        earlier=earlier,
+        quiet=quiet,
+        waiting=waiting,
+        upcoming=upcoming[:8],
+        weekly_loads=store.weekly_loads(),
+        daily=daily,
+        monthly_days=monthly_days,
+        last_report=last_report,
+        next_dispatch=store.next_dispatch(now),
+    )
+    response.set_cookie(SEEN_COOKIE, cookie, max_age=400 * 86400, samesite="lax", httponly=True)
+    return response
+
+
+def topic_or_404(topic_id: str) -> Topic:
+    topic = store.get(topic_id)
+    if topic is None:
+        raise HTTPException(404, "No such topic")
+    return topic
+
+
+def topic_view(request: Request, topic: Topic, report):
+    history = [store.report(topic.id, day) for day in reversed(topic.report_days[-24:])]
+    return render(request, "topic.html", topic=topic, report=report, history=history)
+
+
+@app.get("/t/{topic_id}", response_class=HTMLResponse)
+def topic_page(request: Request, topic_id: str):
+    topic = topic_or_404(topic_id)
+    return topic_view(request, topic, topic.latest)
+
+
+@app.get("/t/{topic_id}/r/{day}", response_class=HTMLResponse)
+def report_page(request: Request, topic_id: str, day: date):
+    topic = topic_or_404(topic_id)
+    report = store.report(topic_id, day)
+    if report is None:
+        raise HTTPException(404, "No report for that day")
+    return topic_view(request, topic, report)
+
+
+def form_page(request: Request, topic: Topic | None, values: dict, error: str | None = None):
+    return render(
+        request,
+        "form.html",
+        topic=topic,
+        values=values,
+        error=error,
+        previews=store.slot_previews(exclude=topic.id if topic else None),
+        languages=store.d.LANGUAGES,
+        cadences=store.d.CADENCES,
+        status_code=400 if error else 200,
+    )
+
+
+@app.get("/new", response_class=HTMLResponse)
+def new_topic(request: Request):
+    values = {"title": "", "brief": "", "cadence": "weekly", "languages": ["en"], "active": True}
+    return form_page(request, None, values)
+
+
+@app.get("/t/{topic_id}/edit", response_class=HTMLResponse)
+def edit_topic(request: Request, topic_id: str):
+    t = topic_or_404(topic_id)
+    values = {
+        "title": t.title,
+        "brief": t.brief,
+        "cadence": t.cadence,
+        "languages": t.languages,
+        "active": t.active,
+    }
+    return form_page(request, t, values)
+
+
+def validate(values: dict) -> str | None:
+    if not values["title"]:
+        return "Give the topic a title."
+    if len(values["title"]) > 80:
+        return "Keep the title under 80 characters."
+    if not values["brief"]:
+        return "Say how this topic should be reported."
+    if len(values["brief"]) > 2000:
+        return "Keep the brief under 2000 characters."
+    if values["cadence"] not in store.d.CADENCES:
+        return "Pick a cadence."
+    if not values["languages"]:
+        return "Pick at least one language to search in."
+    return None
+
+
+async def read_form(request: Request) -> dict:
+    form = await request.form()
+    langs = [lang for lang in form.getlist("languages") if lang in store.d.LANGUAGES]
+    return {
+        "title": str(form.get("title", "")).strip(),
+        "brief": str(form.get("brief", "")).replace("\r\n", "\n").strip(),
+        "cadence": str(form.get("cadence", "")),
+        "languages": langs,
+        "active": form.get("active") is not None,
+    }
+
+
+def save(request: Request, topic: Topic | None, values: dict):
+    previous = None
+    if topic:
+        previous = next(t for t in store.raw_topics() if t["id"] == topic.id)
+        values["id"] = topic.id
+    else:
+        values["id"] = store.unique_id(values["title"])
+        values["active"] = True
+    try:
+        path = store.save_topic(values, previous)
+        verb = "edit" if topic else "add"
+        repo.commit_and_push([path], f"topic: {verb} {values['id']}")
+    except (GitError, ValueError) as exc:
+        return form_page(request, topic, values, error=f"Could not save: {exc}")
+    return RedirectResponse(f"/t/{values['id']}", status_code=303)
+
+
+@app.post("/new")
+async def create_topic(request: Request):
+    values = await read_form(request)
+    if error := validate(values):
+        return form_page(request, None, values, error)
+    return save(request, None, values)
+
+
+@app.post("/t/{topic_id}/edit")
+async def update_topic(request: Request, topic_id: str):
+    topic = topic_or_404(topic_id)
+    values = await read_form(request)
+    if error := validate(values):
+        return form_page(request, topic, values, error)
+    return save(request, topic, values)
+
+
+@app.post("/t/{topic_id}/refresh")
+def refresh_topic(topic_id: str):
+    topic = topic_or_404(topic_id)
+    if not topic.queued:
+        path = store.queue(topic_id)
+        try:
+            repo.commit_and_push([path], f"queue: {topic_id}")
+        except GitError as exc:
+            raise HTTPException(502, f"Could not queue the refresh: {exc}") from exc
+    return RedirectResponse(f"/t/{topic_id}", status_code=303)
+
+
+@app.post("/sync")
+def sync(back: str = Form("/")):
+    repo.pull()
+    target = back if back.startswith("/") and not back.startswith("//") else "/"
+    return RedirectResponse(target, status_code=303)
