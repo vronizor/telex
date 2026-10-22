@@ -6,6 +6,7 @@
 <meta name="color-scheme" content="light dark">
 <title>{% block title %}Briefings{% endblock %}</title>
 <script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="stylesheet" href="/static/themes/{{ theme }}.css?v={{ static_version }}">
 <link rel="stylesheet" href="/static/app.css?v={{ static_version }}">
 <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
 <script src="/static/app.js?v={{ static_version }}" defer></script>
@@ -14,7 +15,7 @@
 <header class="topbar">
   <a class="brand label" href="/">Briefings</a>
   <nav class="topbar-actions">
-    <a class="btn btn-ghost label" href="/new">+ New</a>
+    <a class="btn btn-ghost label" href="/#new">+ New</a>
     <button class="btn btn-ghost icon" type="button" data-theme-toggle aria-label="Switch light or dark theme">◐</button>
     <form method="post" action="/sync">
       <input type="hidden" name="back" value="{{ request.url.path }}">

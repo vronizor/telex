@@ -8,10 +8,7 @@
 </p>
 
 {% if not topics %}
-<section class="empty">
-  <p>No topics yet.</p>
-  <a class="btn btn-primary" href="/new">Add the first one</a>
-</section>
+<p class="notice">No topics yet. Add the first one below.</p>
 {% else %}
 
 <section aria-label="Weekly schedule">
@@ -79,4 +76,10 @@
 </section>
 {% endif %}
 {% endif %}
+
+<section id="new" class="new-topic">
+  <h2 class="section-label label">── New topic</h2>
+  {% set topic = none %}{% set brief_rows = 3 %}
+  {% include "_topic_form.html" %}
+</section>
 {% endblock %}

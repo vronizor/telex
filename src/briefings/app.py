@@ -78,9 +78,18 @@ async def same_origin_posts(request: Request, call_next):
     return await call_next(request)
 
 
+def theme_name() -> str:
+    name = settings.theme
+    return (
+        name if name.isidentifier() and (STATIC_DIR / "themes" / f"{name}.css").exists() else "wire"
+    )
+
+
 def render(request: Request, name: str, status_code: int = 200, **context) -> HTMLResponse:
     now = store.now()
-    context.update(request=request, now=now, today=now.date(), repo=repo, settings=settings)
+    context.update(
+        request=request, now=now, today=now.date(), repo=repo, settings=settings, theme=theme_name()
+    )
     return templates.TemplateResponse(request, name, context, status_code=status_code)
 
 
@@ -141,6 +150,7 @@ def index(request: Request):
         monthly_days=monthly_days,
         last_report=last_report,
         next_dispatch=store.next_dispatch(now),
+        **form_context(None, NEW_TOPIC),
     )
     response.set_cookie(SEEN_COOKIE, cookie, max_age=400 * 86400, samesite="lax", httponly=True)
     return response
@@ -173,24 +183,32 @@ def report_page(request: Request, topic_id: str, day: date):
     return topic_view(request, topic, report)
 
 
+NEW_TOPIC = {"title": "", "brief": "", "cadence": "weekly", "languages": ["en"], "active": True}
+
+
+def form_context(topic: Topic | None, values: dict) -> dict:
+    return {
+        "topic": topic,
+        "values": values,
+        "previews": store.slot_previews(exclude=topic.id if topic else None),
+        "languages": store.d.LANGUAGES,
+        "cadences": store.d.CADENCES,
+    }
+
+
 def form_page(request: Request, topic: Topic | None, values: dict, error: str | None = None):
     return render(
         request,
         "form.html",
-        topic=topic,
-        values=values,
         error=error,
-        previews=store.slot_previews(exclude=topic.id if topic else None),
-        languages=store.d.LANGUAGES,
-        cadences=store.d.CADENCES,
         status_code=400 if error else 200,
+        **form_context(topic, values),
     )
 
 
 @app.get("/new", response_class=HTMLResponse)
 def new_topic(request: Request):
-    values = {"title": "", "brief": "", "cadence": "weekly", "languages": ["en"], "active": True}
-    return form_page(request, None, values)
+    return form_page(request, None, dict(NEW_TOPIC))
 
 
 @app.get("/t/{topic_id}/edit", response_class=HTMLResponse)

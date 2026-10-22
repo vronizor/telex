@@ -4,6 +4,7 @@ import tomllib
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from html import escape
 from pathlib import Path
 from types import ModuleType
 
@@ -14,6 +15,10 @@ from briefings.config import Settings
 MARKS = {"+": "add", "~": "revised", "!": "contested", "-": "removed"}
 MARK_RE = re.compile(r"^\s*[-*]\s+\[([+~!-])\]", re.MULTILINE)
 DIFF_LI_RE = re.compile(r"<li>\[([+~!-])\]\s*(.*?)</li>", re.DOTALL)
+TAG = r"[A-Z][A-Z0-9-]{1,11}"
+SOURCE_LINE_RE = re.compile(rf"^\s*[-*]\s+\[({TAG})\]\s+\[[^\]]*\]\((\S+?)\)", re.MULTILINE)
+SOURCE_LI_RE = re.compile(rf"<li>\[({TAG})\]\s*(.*?)</li>", re.DOTALL)
+TAG_RE = re.compile(rf"\[({TAG})\]")
 _md = MarkdownIt("commonmark", {"html": False, "linkify": False}).enable("table")
 _dispatch_cache: dict[Path, tuple[float, ModuleType]] = {}
 
@@ -40,9 +45,15 @@ class Report:
     since: date | None
     html: str
     counts: dict[str, int] = field(default_factory=dict)
+    sources: int = 0
+
+
+def source_map(text: str) -> dict[str, str]:
+    return {tag: url for tag, url in SOURCE_LINE_RE.findall(text)}
 
 
 def render_markdown(text: str) -> str:
+    sources = source_map(text)
     html = _md.render(text)
 
     def diff_item(m: re.Match) -> str:
@@ -54,7 +65,22 @@ def render_markdown(text: str) -> str:
             f'<div class="d-text">{m.group(2)}</div></li>'
         )
 
-    return DIFF_LI_RE.sub(diff_item, html)
+    def source_item(m: re.Match) -> str:
+        return (
+            f'<li class="src-row" id="src-{m.group(1)}"><span class="src-tag">{m.group(1)}</span>'
+            f"<div>{m.group(2)}</div></li>"
+        )
+
+    def tag(m: re.Match) -> str:
+        url = sources.get(m.group(1))
+        if url is None or not url.startswith(("https://", "http://")):
+            return f'<span class="src">[{m.group(1)}]</span>'
+        return f'<a class="src" href="{escape(url, quote=True)}">[{m.group(1)}]</a>'
+
+    html = DIFF_LI_RE.sub(diff_item, html)
+    html = SOURCE_LI_RE.sub(source_item, html)
+    parts = re.split(r"(<[^>]+>)", html)
+    return "".join(p if p.startswith("<") else TAG_RE.sub(tag, p) for p in parts)
 
 
 def parse_report(path: Path, topic_id: str) -> Report:
@@ -78,6 +104,7 @@ def parse_report(path: Path, topic_id: str) -> Report:
         headline=str(meta.get("headline", "")),
         since=since if isinstance(since, date) else None,
         html=render_markdown(body),
+        sources=len(source_map(body)),
         counts=counts,
     )
 

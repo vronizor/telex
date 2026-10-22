@@ -8,6 +8,7 @@ from tests.conftest import git, remote_file
 def test_index_lists_topics(client):
     r = client.get("/")
     assert r.status_code == 200
+    assert 'id="new"' in r.text and 'action="/new"' in r.text
     assert "New reference index published" in r.text
     assert "Paris cycling network" in r.text
     assert "1 quiet" in r.text
@@ -21,6 +22,10 @@ def test_topic_page_renders_diff(client):
     assert 'class="d d-add"' in r.text
     assert 'class="d d-contested"' in r.text
     assert 'class="d d-removed"' in r.text
+    assert '<a class="src" href="https://example.org/a">[GENCAT]</a>' in r.text
+    assert 'id="src-LVG"' in r.text
+    assert 'href="javascript:' not in r.text
+    assert "src 4" in r.text
     assert "/t/bcn-rent-cap/r/2026-10-14" in r.text
     older = client.get("/t/bcn-rent-cap/r/2026-10-14")
     assert "Reading the" in older.text

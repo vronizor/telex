@@ -17,14 +17,21 @@ since = 2026-10-14
 
 ## What changed
 
-- [+] Index published in the gazette. ([Gencat](https://example.org/a))
-- [+] Two associations appeal. ([Ara](https://example.org/b))
-- [!] Whether the appeal suspends the cap is disputed. ([X](https://example.org/c))
+- [+] Index published in the gazette. [GENCAT]
+- [+] Two associations appeal. [ARA]
+- [!] Whether the appeal suspends the cap is disputed. [LVG] [GOV]
 - [-] The pending parliament vote, held last week.
 
 ## Where it stands
 
-Cap in force.
+Cap in force. [GENCAT]
+
+## Sources
+
+- [GENCAT] [DOGC notice](https://example.org/a) (ca)
+- [ARA] [Ara](https://example.org/b) (ca)
+- [LVG] [La Vanguardia](https://example.org/c) (es)
+- [GOV] [Press office](javascript:alert(1)) (ca)
 """
 
 REPORT_QUIET = """+++

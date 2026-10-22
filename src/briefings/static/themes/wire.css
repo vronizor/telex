@@ -1,0 +1,66 @@
+/* Theme: every color, font and radius the app uses. Copy this file to make another theme and set BRIEFINGS_THEME. */
+
+@font-face { font-family: "Plex Sans"; src: url("../fonts/ibm-plex-sans-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Plex Sans"; src: url("../fonts/ibm-plex-sans-latin-500-normal.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "Plex Sans"; src: url("../fonts/ibm-plex-sans-latin-600-normal.woff2") format("woff2"); font-weight: 600; font-display: swap; }
+@font-face { font-family: "Plex Mono"; src: url("../fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Plex Mono"; src: url("../fonts/ibm-plex-mono-latin-500-normal.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+
+:root {
+  --bg: #ffffff;
+  --surface: #f3f5f7;
+  --surface-2: #e9edf1;
+  --ink: #1b1f24;
+  --muted: #5f6670;
+  --line: #e3e6ea;
+  --line-strong: #c9ced4;
+  --accent: #9a5b00;
+  --accent-ink: #ffffff;
+  --accent-soft: #fbf0df;
+  --add: #1f5fbf;
+  --add-soft: #eaf1fb;
+  --danger: #b42318;
+  --sans: "Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --radius-sm: 3px;
+  --radius: 6px;
+  --radius-lg: 8px;
+  --headline-weight: 600;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-2: #1f2630;
+    --ink: #e6e3dc;
+    --muted: #9ba4ae;
+    --line: #2a313a;
+    --line-strong: #3a434e;
+    --accent: #f2a93b;
+    --accent-ink: #0d1117;
+    --accent-soft: #2b2213;
+    --add: #7fb2f0;
+    --add-soft: #13233a;
+    --danger: #ff8a7a;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-2: #1f2630;
+  --ink: #e6e3dc;
+  --muted: #9ba4ae;
+  --line: #2a313a;
+  --line-strong: #3a434e;
+  --accent: #f2a93b;
+  --accent-ink: #0d1117;
+  --accent-soft: #2b2213;
+  --add: #7fb2f0;
+  --add-soft: #13233a;
+  --danger: #ff8a7a;
+  color-scheme: dark;
+}

@@ -1,0 +1,47 @@
+<form class="topic-form" method="post" action="{{ '/t/' ~ topic.id ~ '/edit' if topic else '/new' }}">
+  <label class="field">
+    <span class="label">Topic</span>
+    <input name="title" type="text" required maxlength="80" value="{{ values.title }}" placeholder="Swiss pension reform" autocomplete="off">
+  </label>
+
+  <label class="field">
+    <span class="label">How should it be reported?</span>
+    <textarea name="brief" rows="{{ brief_rows | default(5) }}" required maxlength="2000" placeholder="Primary sources first. Separate what was decided from what was proposed.">{{ values.brief }}</textarea>
+  </label>
+
+  <fieldset class="field">
+    <legend class="label">Cadence</legend>
+    <div class="segmented">
+      {% for c in cadences %}
+      <label><input type="radio" name="cadence" value="{{ c }}" {% if values.cadence == c %}checked{% endif %}><span>{{ c }}</span></label>
+      {% endfor %}
+    </div>
+  </fieldset>
+
+  <fieldset class="field">
+    <legend class="label">Search in</legend>
+    <div class="chips">
+      {% for lang in languages %}
+      <label><input type="checkbox" name="languages" value="{{ lang }}" {% if lang in values.languages %}checked{% endif %}><span>{{ lang }}</span></label>
+      {% endfor %}
+    </div>
+  </fieldset>
+
+  {% if topic %}
+  <label class="check">
+    <input type="checkbox" name="active" {% if values.active %}checked{% endif %}>
+    <span>Active — untick to pause without losing history</span>
+  </label>
+  {% endif %}
+
+  <p class="preview label" id="slot-preview"
+     data-previews='{{ previews | tojson }}'
+     data-original-cadence="{{ topic.cadence if topic else '' }}"
+     data-original-schedule="{{ topic.schedule if topic else '' }}"
+     data-prefix="{{ '' if topic else 'First report at the next run, then ' }}">
+    {%- if topic and values.cadence == topic.cadence -%}Stays {{ topic.schedule }}
+    {%- else -%}{{ '' if topic else 'First report at the next run, then ' }}{{ previews[values.cadence] }}{%- endif -%}
+  </p>
+
+  <button class="btn btn-primary btn-wide" type="submit">{{ "Save" if topic else "Add topic" }}</button>
+</form>

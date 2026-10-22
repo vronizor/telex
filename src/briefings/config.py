@@ -15,6 +15,7 @@ class Settings:
     sync_minutes: int
     git_name: str
     git_email: str
+    theme: str = "wire"
 
     @property
     def checkout(self) -> Path:
@@ -32,4 +33,5 @@ def get_settings() -> Settings:
         sync_minutes=int(env("BRIEFINGS_SYNC_MINUTES", "30")),
         git_name=env("BRIEFINGS_GIT_NAME", "briefings-pi"),
         git_email=env("BRIEFINGS_GIT_EMAIL", "briefings-pi@localhost"),
+        theme=env("BRIEFINGS_THEME", "wire"),
     )
