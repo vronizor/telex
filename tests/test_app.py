@@ -153,3 +153,17 @@ def test_render_markdown_markers():
     assert 'class="d d-revised"' in html
     assert "<li>plain</li>" in html
     assert "<script>" not in render_markdown("<script>alert(1)</script>")
+
+
+def test_post_through_tailscale_serve(client):
+    r = client.post(
+        "/sync",
+        data={"back": "/"},
+        headers={
+            "host": "127.0.0.1:8020",
+            "x-forwarded-host": "briefings.my-tailnet.ts.net",
+            "origin": "https://briefings.my-tailnet.ts.net",
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303

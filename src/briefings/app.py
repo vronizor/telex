@@ -71,8 +71,10 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 @app.middleware("http")
 async def same_origin_posts(request: Request, call_next):
     origin = request.headers.get("origin")
-    if request.method == "POST" and origin and urlsplit(origin).netloc != request.url.netloc:
-        return PlainTextResponse("Cross-site request refused", status_code=403)
+    if request.method == "POST" and origin:
+        hosts = {request.headers.get("host"), request.headers.get("x-forwarded-host")}
+        if urlsplit(origin).netloc not in hosts:
+            return PlainTextResponse("Cross-site request refused", status_code=403)
     return await call_next(request)
 
 

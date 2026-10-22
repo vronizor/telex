@@ -30,7 +30,7 @@ A small self-hosted reader for news briefings that a scheduled Claude run writes
    ssh-keygen -t ed25519 -f deploy_key -N "" -C briefings-pi && chmod 600 deploy_key
    ```
 4. `cp .env.example .env`, set `BRIEFINGS_REPO_URL` and the host paths, then `docker compose up -d --build`. The first start clones the data repo into `$BRIEFINGS_HOST_DATA_DIR/repo`. Check with `docker compose logs -f app`.
-5. Put it behind your reverse proxy on the tailnet (it listens on `127.0.0.1:$APP_PORT`). There is no login: it relies on the network being private, and refuses cross-site form posts.
+5. Give it a name on the tailnet with Tailscale Services: define a service `briefings` with port `tcp:443` in the admin console, run `sudo tailscale serve --service=svc:briefings --https=443 127.0.0.1:8020` (your `APP_PORT`), then approve the host on the Services page. Leave Funnel off. The app is then at `https://briefings.<tailnet>.ts.net`. There is no login: it relies on the tailnet being private, and refuses cross-site form posts.
 6. Create the scheduled task (Claude, daily at `BRIEFINGS_DISPATCH_TIME`, Europe/Madrid) with this prompt:
    > Attach the GitHub repository `<you>/briefings-data` with push access, clone it, and from its root follow `DISPATCHER.md` exactly. Today's date is the current date in Europe/Madrid.
 
