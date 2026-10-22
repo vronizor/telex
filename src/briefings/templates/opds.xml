@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:dc="http://purl.org/dc/terms/"
+      xmlns:opds="http://opds-spec.org/2010/catalog">
+  <id>urn:briefings:editions</id>
+  <title>Briefings</title>
+  <updated>{{ updated }}</updated>
+  <author><name>Briefings</name></author>
+  <link rel="self" href="{{ base }}/opds/" type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
+  <link rel="start" href="{{ base }}/opds/" type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
+  {% for e in editions %}
+  <entry>
+    <id>urn:briefings:edition:{{ e.day }}</id>
+    <title>{{ e.title }}</title>
+    <author><name>Briefings</name></author>
+    <updated>{{ e.built_at }}</updated>
+    <published>{{ e.built_at }}</published>
+    <summary>{{ e.summary }}</summary>
+    <dc:language>en</dc:language>
+    <link rel="http://opds-spec.org/image" type="image/png" href="{{ base }}/opds/cover/{{ e.day }}.png"/>
+    <link rel="http://opds-spec.org/image/thumbnail" type="image/png" href="{{ base }}/opds/cover/{{ e.day }}.png"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="{{ base }}/opds/edition/{{ e.day }}.epub"/>
+  </entry>
+  {% endfor %}
+</feed>

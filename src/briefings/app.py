@@ -1,15 +1,23 @@
 import asyncio
 import hashlib
+import logging
 from contextlib import asynccontextmanager, suppress
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from briefings import edition
 from briefings.config import get_settings
 from briefings.gitrepo import GitError, Repo
 from briefings.store import Store, Topic
@@ -23,6 +31,7 @@ templates.env.globals["static_version"] = hashlib.sha256(
 SEEN_COOKIE = "briefings_seen"
 SEEN_GRACE = timedelta(hours=1)
 ORDER = {"update": 0, "baseline": 1, "pending": 2, "quiet": 3, "paused": 4}
+log = logging.getLogger("briefings")
 
 
 def short_date(day: date | None, today: date | None = None) -> str:
@@ -47,16 +56,28 @@ repo = Repo(settings.checkout, settings.repo_url, settings.git_name, settings.gi
 store = Store(settings)
 
 
+def refresh_edition() -> None:
+    try:
+        edition.ensure(store, settings)
+    except Exception:
+        log.exception("building the weekly edition failed")
+
+
+def pull_and_build() -> None:
+    repo.pull()
+    refresh_edition()
+
+
 async def sync_loop() -> None:
     while True:
         await asyncio.sleep(settings.sync_minutes * 60)
-        await asyncio.to_thread(repo.pull)
+        await asyncio.to_thread(pull_and_build)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await asyncio.to_thread(repo.ensure)
-    await asyncio.to_thread(repo.pull)
+    await asyncio.to_thread(pull_and_build)
     task = asyncio.create_task(sync_loop())
     yield
     task.cancel()
@@ -150,6 +171,8 @@ def index(request: Request):
         monthly_days=monthly_days,
         last_report=last_report,
         next_dispatch=store.next_dispatch(now),
+        latest_edition=next(iter(edition.list_editions(settings, limit=1)), None),
+        next_edition=edition.edition_day_for(now, settings) + timedelta(days=7),
         **form_context(None, NEW_TOPIC),
     )
     response.set_cookie(SEEN_COOKIE, cookie, max_age=400 * 86400, samesite="lax", httponly=True)
@@ -300,6 +323,45 @@ def refresh_topic(topic_id: str):
 
 @app.post("/sync")
 def sync(back: str = Form("/")):
-    repo.pull()
+    pull_and_build()
     target = back if back.startswith("/") and not back.startswith("//") else "/"
     return RedirectResponse(target, status_code=303)
+
+
+def public_base(request: Request) -> str:
+    if settings.base_url:
+        return settings.base_url
+    forwarded = request.headers.get("x-forwarded-host")
+    return f"https://{forwarded}" if forwarded else str(request.base_url).rstrip("/")
+
+
+@app.get("/opds/")
+def opds_feed(request: Request):
+    editions = edition.list_editions(settings)
+    body = templates.get_template("opds.xml").render(
+        base=public_base(request),
+        editions=editions,
+        updated=editions[0]["built_at"] if editions else store.now().isoformat(timespec="seconds"),
+    )
+    return Response(body, media_type="application/atom+xml;profile=opds-catalog;kind=acquisition")
+
+
+def edition_file(day: date, suffix: str):
+    path = edition.editions_dir(settings) / f"{day.isoformat()}{suffix}"
+    if not path.exists():
+        raise HTTPException(404, "No such edition")
+    return path
+
+
+@app.get("/opds/edition/{day}.epub")
+def opds_epub(day: date):
+    return FileResponse(
+        edition_file(day, ".epub"),
+        media_type="application/epub+zip",
+        filename=f"briefings-{day.isoformat()}.epub",
+    )
+
+
+@app.get("/opds/cover/{day}.png")
+def opds_cover(day: date):
+    return FileResponse(edition_file(day, ".png"), media_type="image/png")

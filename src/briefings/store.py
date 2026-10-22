@@ -7,6 +7,7 @@ from datetime import date, datetime
 from html import escape
 from pathlib import Path
 from types import ModuleType
+from urllib.parse import urlsplit
 
 from markdown_it import MarkdownIt
 
@@ -19,6 +20,8 @@ TAG = r"[A-Z][A-Z0-9-]{1,11}"
 SOURCE_LINE_RE = re.compile(rf"^\s*[-*]\s+\[({TAG})\]\s+\[[^\]]*\]\((\S+?)\)", re.MULTILINE)
 SOURCE_LI_RE = re.compile(rf"<li>\[({TAG})\]\s*(.*?)</li>", re.DOTALL)
 TAG_RE = re.compile(rf"\[({TAG})\]")
+SECTION_RE = re.compile(r"^##[ \t]+(.+?)[ \t]*$", re.MULTILINE)
+STORY = "story so far"
 _md = MarkdownIt("commonmark", {"html": False, "linkify": False}).enable("table")
 _dispatch_cache: dict[Path, tuple[float, ModuleType]] = {}
 
@@ -46,36 +49,67 @@ class Report:
     html: str
     counts: dict[str, int] = field(default_factory=dict)
     sources: int = 0
+    body: str = ""
+    story_html: str = ""
 
 
 def source_map(text: str) -> dict[str, str]:
     return {tag: url for tag, url in SOURCE_LINE_RE.findall(text)}
 
 
-def render_markdown(text: str) -> str:
-    sources = source_map(text)
+def split_sections(body: str) -> tuple[str, list[tuple[str, str]]]:
+    """Returns the text before the first '## ' heading and (heading, section text) pairs."""
+    matches = list(SECTION_RE.finditer(body))
+    if not matches:
+        return body, []
+    sections = []
+    for m, nxt in zip(matches, matches[1:] + [None], strict=False):
+        end = nxt.start() if nxt else len(body)
+        sections.append((m.group(1).strip(), body[m.start() : end]))
+    return body[: matches[0].start()], sections
+
+
+def drop_heading(section: str) -> str:
+    return section.split("\n", 1)[1] if "\n" in section else ""
+
+
+def render_markdown(
+    text: str, anchor_prefix: str | None = None, sources: dict[str, str] | None = None
+) -> str:
+    """Web mode links tags to the source URL; with anchor_prefix (EPUB) they link to endnotes."""
+    sources = source_map(text) if sources is None else sources
     html = _md.render(text)
+    epub = anchor_prefix is not None
+    wrap = "span" if epub else "div"
+    src_id = f"{anchor_prefix}-src" if epub else "src"
 
     def diff_item(m: re.Match) -> str:
         mark = m.group(1)
         symbol = "−" if mark == "-" else mark
         kind = MARKS[mark]
+        flag = '<b class="d-flag">CONTESTED</b> — ' if epub and kind == "contested" else ""
         return (
             f'<li class="d d-{kind}"><span class="d-mark" title="{kind}">{symbol}</span>'
-            f'<div class="d-text">{m.group(2)}</div></li>'
+            f'<{wrap} class="d-text">{flag}{m.group(2)}</{wrap}></li>'
         )
 
     def source_item(m: re.Match) -> str:
+        domain = ""
+        if epub and (url := sources.get(m.group(1))):
+            host = urlsplit(url).netloc.removeprefix("www.")
+            domain = f' <span class="src-url">{escape(host)}</span>' if host else ""
+        tag = m.group(1)
         return (
-            f'<li class="src-row" id="src-{m.group(1)}"><span class="src-tag">{m.group(1)}</span>'
-            f"<div>{m.group(2)}</div></li>"
+            f'<li class="src-row" id="{src_id}-{tag}"><span class="src-tag">{tag}</span>'
+            f"<{wrap}>{m.group(2)}{domain}</{wrap}></li>"
         )
 
     def tag(m: re.Match) -> str:
         url = sources.get(m.group(1))
         if url is None or not url.startswith(("https://", "http://")):
             return f'<span class="src">[{m.group(1)}]</span>'
-        return f'<a class="src" href="{escape(url, quote=True)}">[{m.group(1)}]</a>'
+        href = f"#{src_id}-{m.group(1)}" if epub else escape(url, quote=True)
+        return f'<a class="src" href="{href}">[{m.group(1)}]</a>'
 
     html = DIFF_LI_RE.sub(diff_item, html)
     html = SOURCE_LI_RE.sub(source_item, html)
@@ -97,15 +131,21 @@ def parse_report(path: Path, topic_id: str) -> Report:
     for mark in MARK_RE.findall(body):
         counts[MARKS[mark]] += 1
     since = meta.get("since")
+    preamble, sections = split_sections(body)
+    story = next((text for head, text in sections if head.lower() == STORY), "")
+    rest = preamble + "".join(text for head, text in sections if head.lower() != STORY)
+    all_sources = source_map(body)
     return Report(
         topic_id=topic_id,
         day=date.fromisoformat(path.stem),
         status=str(meta.get("status", "update")),
         headline=str(meta.get("headline", "")),
         since=since if isinstance(since, date) else None,
-        html=render_markdown(body),
-        sources=len(source_map(body)),
+        html=render_markdown(rest, sources=all_sources),
+        sources=len(all_sources),
         counts=counts,
+        body=body,
+        story_html=render_markdown(drop_heading(story), sources=all_sources) if story else "",
     )
 
 

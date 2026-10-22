@@ -16,6 +16,16 @@ A small self-hosted reader for news briefings that a scheduled Claude run writes
 - A new topic gets its first report at the next run, whatever its slot. A missed run is caught up the next day.
 - At most 4 topics per run (`MAX_PER_RUN`); refresh requests go first, then first reports, then the most overdue.
 
+## Weekly e-reader edition
+
+Every week (`BRIEFINGS_EDITION_DAY` at `BRIEFINGS_EDITION_TIME`, default Saturday 08:00) the app builds an EPUB from the last seven days of reports, and rebuilds it if those reports change. It is served as an OPDS catalog at `<BRIEFINGS_BASE_URL>/opds/`.
+
+- Cover: the week, one line per topic with its tag, change counts and headline.
+- Contents: topics with updates, then the quiet ones in one list.
+- One chapter per topic: the latest "Story so far", then each report of the week (its changes; "Where it stands" and "Watch next" only from the latest), sources as endnotes that the `[TAG]` links jump to.
+
+Build one by hand with `docker compose exec app python -m briefings.edition [--date YYYY-MM-DD]`. To list it inside inkbook-digest's catalog, set `EXTRA_CATALOGS=Briefings|<BRIEFINGS_BASE_URL>/opds/` there; or add the URL as a second catalog on the e-reader.
+
 ## Set up
 
 1. Create two GitHub repositories: `briefings` (this code) and `briefings-data` (**private**).
@@ -29,7 +39,7 @@ A small self-hosted reader for news briefings that a scheduled Claude run writes
    ```sh
    ssh-keygen -t ed25519 -f deploy_key -N "" -C briefings-pi && chmod 600 deploy_key
    ```
-4. `cp .env.example .env`, set `BRIEFINGS_REPO_URL` and the host paths, then `docker compose up -d --build`. The first start clones the data repo into `$BRIEFINGS_HOST_DATA_DIR/repo`. Check with `docker compose logs -f app`.
+4. `cp .env.example .env`, set `BRIEFINGS_REPO_URL`, `BRIEFINGS_BASE_URL` and the host paths, then `docker compose up -d --build`. The first start clones the data repo into `$BRIEFINGS_HOST_DATA_DIR/repo`. Check with `docker compose logs -f app`.
 5. Give it a name on the tailnet with Tailscale Services: define a service `briefings` with port `tcp:443` in the admin console, run `sudo tailscale serve --service=svc:briefings --https=443 127.0.0.1:8020` (your `APP_PORT`), then approve the host on the Services page. Leave Funnel off. The app is then at `https://briefings.<tailnet>.ts.net`. There is no login: it relies on the tailnet being private, and refuses cross-site form posts.
 6. Create the scheduled task (Claude, daily at `BRIEFINGS_DISPATCH_TIME`, Europe/Madrid) with this prompt:
    > Attach the GitHub repository `<you>/briefings-data` with push access, clone it, and from its root follow `DISPATCHER.md` exactly. Today's date is the current date in Europe/Madrid.

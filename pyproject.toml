@@ -4,9 +4,11 @@ version = "0.1.0"
 description = "Self-hosted reader for scheduled news briefings kept in a git repository"
 requires-python = ">=3.12"
 dependencies = [
+    "ebooklib>=0.20",
     "fastapi>=0.115",
     "jinja2>=3.1",
     "markdown-it-py>=3.0",
+    "pillow>=13.0.0",
     "python-multipart>=0.0.20",
     "uvicorn>=0.30",
 ]

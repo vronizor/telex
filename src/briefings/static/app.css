@@ -275,3 +275,9 @@ h1, h2, p { margin: 0; }
 
 .new-topic { margin-top: 12px; }
 .new-topic .topic-form { margin-top: 8px; padding: 14px; gap: 16px; border: 1px solid var(--line); border-radius: var(--radius); }
+
+.story { margin-top: 16px; border: 1px solid var(--line); border-radius: var(--radius); padding: 0 12px; }
+.story summary { cursor: pointer; color: var(--muted); padding: 10px 0; min-height: 44px; display: flex; align-items: center; }
+.story .report { margin-top: 0; padding-bottom: 4px; }
+.edition-line { color: var(--muted); font-size: 11px; margin-top: 4px; }
+.edition-line a { color: var(--ink); }

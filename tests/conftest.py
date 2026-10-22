@@ -15,6 +15,10 @@ headline = "New reference index published; landlord groups appeal"
 since = 2026-10-14
 +++
 
+## Story so far
+
+Barcelona caps rents in stressed areas. Landlords contest the index. [GENCAT]
+
 ## What changed
 
 - [+] Index published in the gazette. [GENCAT]

@@ -5,6 +5,8 @@ from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -16,6 +18,9 @@ class Settings:
     git_name: str
     git_email: str
     theme: str = "wire"
+    base_url: str = ""
+    edition_weekday: int = 5
+    edition_time: time = time(8, 0)
 
     @property
     def checkout(self) -> Path:
@@ -34,4 +39,7 @@ def get_settings() -> Settings:
         git_name=env("BRIEFINGS_GIT_NAME", "briefings-pi"),
         git_email=env("BRIEFINGS_GIT_EMAIL", "briefings-pi@localhost"),
         theme=env("BRIEFINGS_THEME", "wire"),
+        base_url=env("BRIEFINGS_BASE_URL", "").rstrip("/"),
+        edition_weekday=WEEKDAYS.index(env("BRIEFINGS_EDITION_DAY", "sat").lower()[:3]),
+        edition_time=time.fromisoformat(env("BRIEFINGS_EDITION_TIME", "08:00")),
     )

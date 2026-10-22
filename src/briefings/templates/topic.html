@@ -22,6 +22,12 @@
     {% if report.sources %} · src {{ report.sources }}{% endif %}
     · {{ topic.languages | join(",") }}
   </p>
+  {% if report.story_html %}
+  <details class="story">
+    <summary class="label">Story so far</summary>
+    <div class="report">{{ report.story_html | safe }}</div>
+  </details>
+  {% endif %}
   <article class="report report-{{ report.status }}">
     {{ report.html | safe }}
   </article>

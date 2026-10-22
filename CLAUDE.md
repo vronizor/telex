@@ -6,6 +6,7 @@
 - Every write from the app goes through `Repo.commit_and_push` (pull, add, commit, push, one retry on rejection), under one lock; run a single uvicorn worker.
 - Theme: all colors, fonts and radii live in `static/themes/<name>.css` (`BRIEFINGS_THEME`); `app.css` uses only those variables, never raw values.
 - UI: server-rendered Jinja, one small `app.js`, no build step. Mono (`.label`) for labels, tags, dates and codes; sans for reading. Light and dark via CSS variables; check both.
+- E-reader edition: `edition.py` builds a weekly EPUB (ebooklib, Pillow cover) into `$DATA_DIR/editions/`, rebuilt when the week's reports change (digest in the `.json`; bump `FORMAT_VERSION` when the output format changes). E-ink: greyscale, no flex/grid in `static/epub.css`. Served at `/opds/`.
 - Access: Tailscale Services (`tailscale serve --service=svc:briefings`) proxies to `127.0.0.1:$APP_PORT`; no Caddy, no login.
 - Conventions: polars (never pandas) if data work appears, few dependencies, minimal comments, ruff.
 

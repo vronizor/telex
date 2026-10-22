@@ -23,6 +23,9 @@
   <p class="week-caption label">
     Weekly topics per day{% if daily %} · +{{ daily }} daily{% endif %}{% if monthly_days %} · monthly on {{ monthly_days | join(", ") }}{% endif %}
   </p>
+  <p class="edition-line label">
+    {% if latest_edition %}<a href="/opds/edition/{{ latest_edition.day }}.epub">Edition {{ latest_edition.range }} ↓</a> · {% endif %}next edition {{ next_edition | short_date(today) }}
+  </p>
 </section>
 
 {% if fresh %}

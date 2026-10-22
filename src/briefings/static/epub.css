@@ -1,0 +1,22 @@
+body { margin: 0 0.4em; line-height: 1.45; }
+.label { font-family: monospace; font-size: 0.72em; letter-spacing: 0.05em; text-transform: uppercase; color: #333; margin: 0; }
+h1 { font-size: 1.4em; line-height: 1.2; margin: 0.3em 0 0.3em; }
+h2.day { font-size: 1.05em; margin: 1.6em 0 0.2em; padding-top: 0.5em; border-top: 2px solid #000; }
+.sec { font-family: monospace; font-size: 0.72em; font-weight: normal; letter-spacing: 0.05em; text-transform: uppercase; color: #333; margin: 1.4em 0 0.4em; }
+p { margin: 0 0 0.7em; }
+ul { margin: 0 0 0.7em; padding-left: 1.2em; }
+li { margin: 0 0 0.3em; }
+li.d { list-style: none; margin: 0 0 0.7em -1.2em; padding-left: 1.5em; text-indent: -1.5em; }
+.d-mark { font-family: monospace; font-weight: bold; display: inline-block; width: 1.5em; text-indent: 0; }
+.d-flag { font-family: monospace; font-size: 0.8em; letter-spacing: 0.05em; }
+li.d-removed { color: #555; }
+a.src, span.src { font-family: monospace; font-size: 0.72em; color: #333; text-decoration: none; }
+li.src-row { list-style: none; margin: 0 0 0.6em -1.2em; padding-left: 4.5em; text-indent: -4.5em; font-size: 0.9em; }
+.src-tag { font-family: monospace; font-size: 0.8em; display: inline-block; width: 5.6em; text-indent: 0; }
+.src-url { font-family: monospace; font-size: 0.72em; color: #555; }
+.story p { text-align: justify; }
+.toc-item { margin: 0 0 1.1em; }
+.toc-title { font-weight: bold; margin: 0.15em 0 0.1em; }
+.toc-title a { color: #000; text-decoration: none; }
+.toc-head { margin: 0; }
+.quiet-line { margin: 0 0 0.4em; }
