@@ -255,3 +255,26 @@ def test_tags_starting_with_digit():
     assert '<a class="src" href="https://example.org/3">[3CAT]</a>' in html
     assert 'id="src-3CAT"' in html
     assert "[2026] stays" in html
+
+
+def test_until_from_form(client, remote):
+    import tomllib as _t
+
+    from tests.conftest import remote_file as _rf
+
+    base = {
+        "title": "EU chat control",
+        "brief": "x",
+        "cadence": "weekly",
+        "every": "1",
+        "languages": ["en"],
+        "active": "on",
+    }
+    client.post("/t/eu-chat-control/edit", data={**base, "until": "2026-12-31"})
+    data = _t.loads(_rf(remote, "topics/eu-chat-control.toml"))
+    assert str(data["until"]) == "2026-12-31"
+    assert 'value="2026-12-31"' in client.get("/t/eu-chat-control/edit").text
+    client.post("/t/eu-chat-control/edit", data={**base, "until": ""})
+    assert "until" not in _t.loads(_rf(remote, "topics/eu-chat-control.toml"))
+    bad = client.post("/t/eu-chat-control/edit", data={**base, "until": "soon"})
+    assert bad.status_code == 400

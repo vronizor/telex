@@ -45,7 +45,13 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!checked) return;
       const cadence = checked.value;
       const label = cadence === preview.dataset.originalCadence ? preview.dataset.originalSlot : slots[cadence];
-      preview.textContent = preview.dataset.prefix + describe(cadence, n, label);
+      const untilInput = form.querySelector('input[name="until"]');
+      let end = "";
+      if (untilInput && untilInput.value) {
+        const day = new Date(untilInput.value + "T12:00:00");
+        end = ", until " + day.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+      }
+      preview.textContent = preview.dataset.prefix + describe(cadence, n, label) + end;
     };
     form.addEventListener("input", update);
     form.addEventListener("change", update);

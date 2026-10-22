@@ -223,6 +223,7 @@ NEW_TOPIC = {
     "brief": "",
     "cadence": "weekly",
     "every": 1,
+    "until": None,
     "languages": ["en"],
     "active": True,
 }
@@ -234,15 +235,19 @@ def form_context(topic: Topic | None, values: dict) -> dict:
     keep = topic is not None and topic.cadence == values["cadence"]
     slot = topic.slot if keep else slots.get(values["cadence"])
     prefix = "" if topic else "First report at the next run, then "
+    until = values.get("until") if isinstance(values.get("until"), date) else None
     every = values["every"] if isinstance(values["every"], int) and values["every"] > 0 else 1
     return {
         "topic": topic,
         "values": values,
         "slot_labels": {c: d.slot_label(c, s) for c, s in slots.items()},
         "original_slot": d.slot_label(topic.cadence, topic.slot) if topic else None,
-        "preview": prefix + d.describe_schedule(values["cadence"], slot, every)
+        "preview": prefix
+        + d.describe_schedule(values["cadence"], slot, every)
+        + (f", until {until.day} {until:%b}" if until else "")
         if values["cadence"] in d.CADENCES
         else "",
+        "until_value": until.isoformat() if until else "",
         "preview_prefix": prefix,
         "max_every": d.MAX_EVERY,
         "languages": store.d.LANGUAGES,
@@ -273,6 +278,7 @@ def edit_topic(request: Request, topic_id: str):
         "brief": t.brief,
         "cadence": t.cadence,
         "every": t.every,
+        "until": t.until,
         "languages": t.languages,
         "active": t.active,
     }
@@ -290,6 +296,8 @@ def validate(values: dict) -> str | None:
         return "Keep the brief under 2000 characters."
     if values["cadence"] not in store.d.CADENCES:
         return "Pick a cadence."
+    if values.get("until") == "invalid":
+        return "Give the end date as a date, or leave it empty."
     if not 1 <= values["every"] <= store.d.MAX_EVERY:
         unit = {"daily": "days", "weekly": "weeks", "monthly": "months"}[values["cadence"]]
         return f"Repeat every 1 to {store.d.MAX_EVERY} {unit}."
@@ -305,7 +313,12 @@ async def read_form(request: Request) -> dict:
         every = int(form.get("every") or 1)
     except ValueError:
         every = 0
-    return {
+    raw_until = str(form.get("until") or "").strip()
+    try:
+        until = date.fromisoformat(raw_until) if raw_until else None
+    except ValueError:
+        until = "invalid"
+    values = {
         "title": str(form.get("title", "")).strip(),
         "brief": str(form.get("brief", "")).replace("\r\n", "\n").strip(),
         "cadence": str(form.get("cadence", "")),
@@ -313,6 +326,9 @@ async def read_form(request: Request) -> dict:
         "languages": langs,
         "active": form.get("active") is not None,
     }
+    if "until" in form:
+        values["until"] = until
+    return values
 
 
 def save(request: Request, topic: Topic | None, values: dict):

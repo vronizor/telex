@@ -164,6 +164,7 @@ class Topic:
     latest: Report | None
     next_run: date | None
     every: int = 1
+    until: date | None = None
 
     @property
     def state(self) -> str:
@@ -229,6 +230,7 @@ class Store:
             latest=latest,
             next_run=next_run,
             every=d.every(raw),
+            until=until,
         )
 
     def topics(self) -> list[Topic]:
