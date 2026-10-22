@@ -204,7 +204,9 @@ class Store:
         d, now = self.d, now or self.now()
         days = d.report_dates(self.root, raw["id"])
         latest = self.report(raw["id"], days[-1]) if days else None
-        active = raw.get("active", True)
+        until = raw.get("until") if isinstance(raw.get("until"), date) else None
+        ended = until is not None and now.date() > until
+        active = raw.get("active", True) and not ended
         if not active:
             next_run = None
         elif d.is_due(self.root, raw, now.date()):
@@ -219,7 +221,8 @@ class Store:
             languages=list(raw.get("languages", [])),
             active=active,
             brief=raw.get("brief", ""),
-            schedule=d.describe_schedule(raw["cadence"], raw.get("slot")),
+            schedule=d.describe_schedule(raw["cadence"], raw.get("slot"))
+            + (f", until {until.day} {until:%b}" if until else ""),
             queued=d.is_queued(self.root, raw["id"]),
             report_days=days,
             latest=latest,
@@ -256,6 +259,8 @@ class Store:
 
     def save_topic(self, data: dict, previous: dict | None) -> str:
         d = self.d
+        if previous and previous.get("until") and "until" not in data:
+            data["until"] = previous["until"]
         others = [t for t in self.raw_topics() if t["id"] != data["id"]]
         if previous and previous["cadence"] == data["cadence"]:
             data["slot"] = previous.get("slot")

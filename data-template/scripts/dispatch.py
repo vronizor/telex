@@ -74,8 +74,13 @@ def next_scheduled_after(topic: dict, day: date) -> date:
     return this_month if day.day < slot else _shift_month(day, 1).replace(day=slot)
 
 
+def has_ended(topic: dict, today: date) -> bool:
+    until = topic.get("until")
+    return isinstance(until, date) and today > until
+
+
 def is_due(root: Path, topic: dict, today: date) -> bool:
-    if not topic.get("active", True):
+    if not topic.get("active", True) or has_ended(topic, today):
         return False
     if is_queued(root, topic["id"]):
         return True
@@ -87,7 +92,8 @@ def slot_loads(topics: list[dict], cadence: str) -> list[int]:
     size = 7 if cadence == "weekly" else 28
     loads = [0] * size
     for t in topics:
-        if t.get("active", True) and t["cadence"] == cadence and t.get("slot") is not None:
+        live = t.get("active", True) and not has_ended(t, today_local())
+        if live and t["cadence"] == cadence and t.get("slot") is not None:
             index = t["slot"] if cadence == "weekly" else t["slot"] - 1
             if 0 <= index < size:
                 loads[index] += 1
@@ -139,6 +145,10 @@ def dump_topic(topic: dict) -> str:
         f"languages = {json.dumps(list(topic.get('languages') or ['en']))}",
         f"active = {'true' if topic.get('active', True) else 'false'}",
         f"created = {topic.get('created') or today_local()}",
+    ]
+    if isinstance(topic.get("until"), date):
+        lines.append(f"until = {topic['until']}")
+    lines += [
         f"brief = {_toml_string(topic['brief'].strip())}",
     ]
     return "\n".join(lines) + "\n"

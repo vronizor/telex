@@ -117,3 +117,12 @@ def test_describe_schedule():
     assert d.describe_schedule("weekly", 1) == "every Tue"
     assert d.describe_schedule("monthly", 22) == "monthly on the 22nd"
     assert d.describe_schedule("monthly", 11) == "monthly on the 11th"
+
+
+def test_until(root):
+    t = topic("mid", "daily", until=date(2026, 11, 5))
+    d.write_topic(root, t)
+    loaded = d.load_topics(root)[0]
+    assert loaded["until"] == date(2026, 11, 5)
+    assert d.is_due(root, loaded, date(2026, 11, 5))
+    assert not d.is_due(root, loaded, date(2026, 11, 6))

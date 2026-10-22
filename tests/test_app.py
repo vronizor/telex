@@ -172,3 +172,29 @@ def test_post_through_tailscale_serve(client):
         follow_redirects=False,
     )
     assert r.status_code == 303
+
+
+def test_edit_keeps_until(client, remote):
+    import tomllib as _t
+
+    from telex import app as app_module
+    from tests.conftest import git
+
+    path = app_module.store.root / "topics" / "eu-chat-control.toml"
+    path.write_text(path.read_text() + "until = 2026-11-05\n")
+    git("commit", "-qam", "until", cwd=app_module.store.root)
+    git("push", "-q", cwd=app_module.store.root)
+    page = client.get("/t/eu-chat-control").text
+    assert "until 5 Nov" in page
+    client.post(
+        "/t/eu-chat-control/edit",
+        data={
+            "title": "EU chat control",
+            "brief": "x",
+            "cadence": "weekly",
+            "languages": ["en"],
+            "active": "on",
+        },
+    )
+    data = _t.loads(remote_file(remote, "topics/eu-chat-control.toml"))
+    assert str(data["until"]) == "2026-11-05"
