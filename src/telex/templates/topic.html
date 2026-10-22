@@ -39,6 +39,13 @@
   </p>
 {% endif %}
 
+{% if chat_url %}
+<div class="chat">
+  <a class="btn btn-wide" href="{{ chat_url }}" target="_blank" rel="noopener">Chat about this with Claude ↗</a>
+  <button class="btn-link label" type="button" data-copy="{{ copy_text }}">Copy full report</button>
+</div>
+{% endif %}
+
 <div class="actions">
   <form method="post" action="/t/{{ topic.id }}/refresh">
     <button class="btn btn-primary" type="submit" {% if topic.queued or not topic.active %}disabled{% endif %}>

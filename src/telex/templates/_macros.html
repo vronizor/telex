@@ -6,10 +6,11 @@
 {%- endmacro %}
 
 {% macro sched(t) -%}
-{%- if t.cadence == "daily" -%}DAILY
-{%- elif t.slot is none -%}{{ "WK" if t.cadence == "weekly" else "MO" }}·?
-{%- elif t.cadence == "weekly" -%}WK·{{ DAYS[t.slot] | upper }}
-{%- else -%}MO·{{ t.slot }}{%- endif -%}
+{%- set n = t.every if t.every and t.every > 1 else "" -%}
+{%- if t.cadence == "daily" -%}{% if n %}{{ n }}D{% else %}DAILY{% endif %}
+{%- elif t.slot is none -%}{{ n }}{{ "WK" if t.cadence == "weekly" else "MO" }}·?
+{%- elif t.cadence == "weekly" -%}{{ n }}WK·{{ DAYS[t.slot] | upper }}
+{%- else -%}{{ n }}MO·{{ t.slot }}{%- endif -%}
 {%- endmacro %}
 
 {% macro counts(c) -%}

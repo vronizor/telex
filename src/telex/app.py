@@ -4,7 +4,7 @@ import logging
 from contextlib import asynccontextmanager, suppress
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import (
@@ -20,7 +20,7 @@ from fastapi.templating import Jinja2Templates
 from telex import edition
 from telex.config import get_settings
 from telex.gitrepo import GitError, Repo
-from telex.store import Store, Topic
+from telex.store import Store, Topic, chat_prompt, full_text
 
 HERE = Path(__file__).parent
 STATIC_DIR = HERE / "static"
@@ -188,7 +188,19 @@ def topic_or_404(topic_id: str) -> Topic:
 
 def topic_view(request: Request, topic: Topic, report):
     history = [store.report(topic.id, day) for day in reversed(topic.report_days[-24:])]
-    return render(request, "topic.html", topic=topic, report=report, history=history)
+    chat_url = copy_text = None
+    if report is not None:
+        chat_url = "https://claude.ai/new?q=" + quote(chat_prompt(topic.title, report), safe="")
+        copy_text = full_text(topic.title, report)
+    return render(
+        request,
+        "topic.html",
+        topic=topic,
+        report=report,
+        history=history,
+        chat_url=chat_url,
+        copy_text=copy_text,
+    )
 
 
 @app.get("/t/{topic_id}", response_class=HTMLResponse)
@@ -206,14 +218,33 @@ def report_page(request: Request, topic_id: str, day: date):
     return topic_view(request, topic, report)
 
 
-NEW_TOPIC = {"title": "", "brief": "", "cadence": "weekly", "languages": ["en"], "active": True}
+NEW_TOPIC = {
+    "title": "",
+    "brief": "",
+    "cadence": "weekly",
+    "every": 1,
+    "languages": ["en"],
+    "active": True,
+}
 
 
 def form_context(topic: Topic | None, values: dict) -> dict:
+    d = store.d
+    slots = store.new_slots(exclude=topic.id if topic else None)
+    keep = topic is not None and topic.cadence == values["cadence"]
+    slot = topic.slot if keep else slots.get(values["cadence"])
+    prefix = "" if topic else "First report at the next run, then "
+    every = values["every"] if isinstance(values["every"], int) and values["every"] > 0 else 1
     return {
         "topic": topic,
         "values": values,
-        "previews": store.slot_previews(exclude=topic.id if topic else None),
+        "slot_labels": {c: d.slot_label(c, s) for c, s in slots.items()},
+        "original_slot": d.slot_label(topic.cadence, topic.slot) if topic else None,
+        "preview": prefix + d.describe_schedule(values["cadence"], slot, every)
+        if values["cadence"] in d.CADENCES
+        else "",
+        "preview_prefix": prefix,
+        "max_every": d.MAX_EVERY,
         "languages": store.d.LANGUAGES,
         "cadences": store.d.CADENCES,
     }
@@ -241,6 +272,7 @@ def edit_topic(request: Request, topic_id: str):
         "title": t.title,
         "brief": t.brief,
         "cadence": t.cadence,
+        "every": t.every,
         "languages": t.languages,
         "active": t.active,
     }
@@ -258,6 +290,9 @@ def validate(values: dict) -> str | None:
         return "Keep the brief under 2000 characters."
     if values["cadence"] not in store.d.CADENCES:
         return "Pick a cadence."
+    if not 1 <= values["every"] <= store.d.MAX_EVERY:
+        unit = {"daily": "days", "weekly": "weeks", "monthly": "months"}[values["cadence"]]
+        return f"Repeat every 1 to {store.d.MAX_EVERY} {unit}."
     if not values["languages"]:
         return "Pick at least one language to search in."
     return None
@@ -266,10 +301,15 @@ def validate(values: dict) -> str | None:
 async def read_form(request: Request) -> dict:
     form = await request.form()
     langs = [lang for lang in form.getlist("languages") if lang in store.d.LANGUAGES]
+    try:
+        every = int(form.get("every") or 1)
+    except ValueError:
+        every = 0
     return {
         "title": str(form.get("title", "")).strip(),
         "brief": str(form.get("brief", "")).replace("\r\n", "\n").strip(),
         "cadence": str(form.get("cadence", "")),
+        "every": every,
         "languages": langs,
         "active": form.get("active") is not None,
     }

@@ -164,11 +164,16 @@ def counts_text(counts: dict[str, int]) -> str:
 
 def schedule_code(raw: dict) -> str:
     cadence, slot = raw["cadence"], raw.get("slot")
+    try:
+        n = int(raw.get("every", 1))
+    except (TypeError, ValueError):
+        n = 1
+    k = str(n) if n > 1 else ""
     if cadence == "daily":
-        return "DAILY"
+        return f"{k}D" if k else "DAILY"
     if slot is None:
-        return "WK·?" if cadence == "weekly" else "MO·?"
-    return f"WK·{DAYS[slot].upper()}" if cadence == "weekly" else f"MO·{slot}"
+        return f"{k}WK·?" if cadence == "weekly" else f"{k}MO·?"
+    return f"{k}WK·{DAYS[slot].upper()}" if cadence == "weekly" else f"{k}MO·{slot}"
 
 
 def edition_day_for(now: datetime, settings: Settings) -> date:

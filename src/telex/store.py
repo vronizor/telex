@@ -16,7 +16,7 @@ from telex.config import Settings
 MARKS = {"+": "add", "~": "revised", "!": "contested", "-": "removed"}
 MARK_RE = re.compile(r"^\s*[-*]\s+\[([+~!-])\]", re.MULTILINE)
 DIFF_LI_RE = re.compile(r"<li>\[([+~!-])\]\s*(.*?)</li>", re.DOTALL)
-TAG = r"[A-Z][A-Z0-9-]{1,11}"
+TAG = r"(?=[A-Z0-9-]*[A-Z])[A-Z0-9][A-Z0-9-]{1,11}"
 SOURCE_LINE_RE = re.compile(rf"^\s*[-*]\s+\[({TAG})\]\s+\[[^\]]*\]\((\S+?)\)", re.MULTILINE)
 SOURCE_LI_RE = re.compile(rf"<li>\[({TAG})\]\s*(.*?)</li>", re.DOTALL)
 TAG_RE = re.compile(rf"\[({TAG})\]")
@@ -163,6 +163,7 @@ class Topic:
     report_days: list[date]
     latest: Report | None
     next_run: date | None
+    every: int = 1
 
     @property
     def state(self) -> str:
@@ -212,7 +213,7 @@ class Store:
         elif d.is_due(self.root, raw, now.date()):
             next_run = self.next_dispatch(now)
         else:
-            next_run = d.next_scheduled_after(raw, now.date())
+            next_run = d.next_due(raw, days[-1])
         return Topic(
             id=raw["id"],
             title=raw["title"],
@@ -221,12 +222,13 @@ class Store:
             languages=list(raw.get("languages", [])),
             active=active,
             brief=raw.get("brief", ""),
-            schedule=d.describe_schedule(raw["cadence"], raw.get("slot"))
+            schedule=d.describe_schedule(raw["cadence"], raw.get("slot"), d.every(raw))
             + (f", until {until.day} {until:%b}" if until else ""),
             queued=d.is_queued(self.root, raw["id"]),
             report_days=days,
             latest=latest,
             next_run=next_run,
+            every=d.every(raw),
         )
 
     def topics(self) -> list[Topic]:
@@ -242,12 +244,9 @@ class Store:
     def weekly_loads(self) -> list[int]:
         return self.d.slot_loads(self.raw_topics(), "weekly")
 
-    def slot_previews(self, exclude: str | None = None) -> dict[str, str]:
+    def new_slots(self, exclude: str | None = None) -> dict[str, int | None]:
         others = [t for t in self.raw_topics() if t["id"] != exclude]
-        return {
-            cadence: self.d.describe_schedule(cadence, self.d.pick_slot(others, cadence))
-            for cadence in self.d.CADENCES
-        }
+        return {cadence: self.d.pick_slot(others, cadence) for cadence in self.d.CADENCES}
 
     def unique_id(self, title: str) -> str:
         base = slugify(title)
@@ -276,6 +275,64 @@ class Store:
         path.parent.mkdir(exist_ok=True)
         path.touch()
         return str(path.relative_to(self.root))
+
+
+CHAT_LIMIT = 1800
+MD_LINK_RE = re.compile(r"\[([^\]]+)\]\((?:[^)\s]+)\)")
+
+
+def _plain(markdown: str) -> str:
+    text = MD_LINK_RE.sub(r"\1", markdown)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def _clip(text: str, budget: int) -> str:
+    if len(text) <= budget:
+        return text
+    cut = text[: max(0, budget - 2)]
+    stop = max(cut.rfind("\n"), cut.rfind(". "))
+    return (cut[: stop + 1] if stop > budget // 2 else cut).rstrip() + " …"
+
+
+def chat_prompt(title: str, report: Report, limit: int = CHAT_LIMIT) -> str:
+    """Context for a claude.ai/new?q= link; prefilled URLs get unreliable past ~2000 chars."""
+    _, sections = split_sections(report.body)
+    by_name = {head.lower(): _plain(drop_heading(text)) for head, text in sections}
+    head = f'I\'m reading my Telex briefing on "{title}" ({report.day:%d %b %Y}): {report.headline}'
+    ask = (
+        "Use these sources and fresh searches to answer my follow-up questions. "
+        "To start, suggest three questions worth digging into."
+    )
+    cited = TAG_RE.findall(report.body)
+    sources = source_map(report.body)
+    lines, used = [], set()
+    for tag in [*cited, *sources]:
+        if tag in sources and tag not in used:
+            used.add(tag)
+            lines.append(f"[{tag}] {sources[tag]}")
+    src_block = ""
+    for line in lines:
+        candidate = f"{src_block}\n{line}" if src_block else line
+        if len(candidate) > limit // 3:
+            break
+        src_block = candidate
+    fixed = len(head) + len(ask) + len(src_block) + 40
+    body_parts = [
+        (name.capitalize() if name != STORY else "Story so far", by_name[name])
+        for name in ("where it stands", "what changed", STORY, "background")
+        if by_name.get(name)
+    ]
+    body = "\n\n".join(f"{name}:\n{text}" for name, text in body_parts) or _plain(report.body)
+    body = _clip(body, max(200, limit - fixed))
+    parts = [head, body]
+    if src_block:
+        parts.append(f"Sources:\n{src_block}")
+    parts.append(ask)
+    return "\n\n".join(parts)[:limit]
+
+
+def full_text(title: str, report: Report) -> str:
+    return f"# {title} — {report.day.isoformat()}\n\n{report.headline}\n\n{report.body.strip()}\n"
 
 
 def slugify(text: str) -> str:

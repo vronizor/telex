@@ -198,3 +198,60 @@ def test_edit_keeps_until(client, remote):
     )
     data = _t.loads(remote_file(remote, "topics/eu-chat-control.toml"))
     assert str(data["until"]) == "2026-11-05"
+
+
+def test_chat_link_and_copy(client):
+    import re as _re
+    from urllib.parse import unquote
+
+    page = client.get("/t/bcn-rent-cap").text
+    m = _re.search(r'href="https://claude\.ai/new\?q=([^"]+)"', page)
+    assert m
+    prompt = unquote(m.group(1).replace("&amp;", "&"))
+    assert len(prompt) <= 1800
+    assert prompt.startswith('I\'m reading my Telex briefing on "Barcelona rent cap"')
+    assert "Story so far:" in prompt and "What changed:" in prompt
+    assert "[GENCAT] https://example.org/a" in prompt
+    assert "suggest three questions" in prompt
+    assert 'data-copy="# Barcelona rent cap' in page
+    assert "Chat about this" not in client.get("/t/paris-velo").text
+
+
+def test_every_n(client, remote):
+    import tomllib as _t
+
+    from tests.conftest import remote_file as _rf
+
+    r = client.post(
+        "/new",
+        data={
+            "title": "Swiss pensions",
+            "brief": "x",
+            "cadence": "weekly",
+            "every": "2",
+            "languages": ["fr"],
+        },
+        follow_redirects=False,
+    )
+    assert r.status_code == 303
+    data = _t.loads(_rf(remote, "topics/swiss-pensions.toml"))
+    assert data["every"] == 2
+    page = client.get("/t/swiss-pensions").text
+    assert "every 2 weeks on" in page
+    bad = client.post(
+        "/new",
+        data={"title": "Y", "brief": "x", "cadence": "daily", "every": "0", "languages": ["fr"]},
+    )
+    assert bad.status_code == 400 and "Repeat every 1 to 12 days" in bad.text
+
+
+def test_tags_starting_with_digit():
+    from telex.store import render_markdown
+
+    html = render_markdown(
+        "Text [3CAT] and [2026] stays.\n\n## Sources\n\n"
+        "- [3CAT] [3Cat news](https://example.org/3) (ca)\n"
+    )
+    assert '<a class="src" href="https://example.org/3">[3CAT]</a>' in html
+    assert 'id="src-3CAT"' in html
+    assert "[2026] stays" in html

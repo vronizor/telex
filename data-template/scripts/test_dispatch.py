@@ -117,6 +117,10 @@ def test_describe_schedule():
     assert d.describe_schedule("weekly", 1) == "every Tue"
     assert d.describe_schedule("monthly", 22) == "monthly on the 22nd"
     assert d.describe_schedule("monthly", 11) == "monthly on the 11th"
+    assert d.describe_schedule("daily", None) == "every day"
+    assert d.describe_schedule("daily", None, 3) == "every 3 days"
+    assert d.describe_schedule("weekly", 4, 2) == "every 2 weeks on Fri"
+    assert d.describe_schedule("monthly", 5, 3) == "every 3 months on the 5th"
 
 
 def test_until(root):
@@ -126,3 +130,32 @@ def test_until(root):
     assert loaded["until"] == date(2026, 11, 5)
     assert d.is_due(root, loaded, date(2026, 11, 5))
     assert not d.is_due(root, loaded, date(2026, 11, 6))
+
+
+def test_next_due_with_every():
+    wed2 = topic("w", "weekly", 2, every=2)
+    assert d.next_due(wed2, date(2026, 10, 21)) == date(2026, 11, 4)
+    assert d.next_due(wed2, date(2026, 10, 22)) == date(2026, 11, 4)
+    assert d.next_due(topic("w1", "weekly", 0), date(2026, 10, 22)) == date(2026, 10, 26)
+    assert d.next_due(topic("d3", "daily", every=3), date(2026, 10, 22)) == date(2026, 10, 25)
+    assert d.next_due(topic("m2", "monthly", 5, every=2), date(2026, 10, 22)) == date(2026, 12, 5)
+    assert d.next_due(topic("m1", "monthly", 1), date(2026, 10, 22)) == date(2026, 11, 1)
+    assert d.next_due(topic("m1", "monthly", 1), date(2026, 12, 3)) == date(2027, 1, 1)
+
+
+def test_every_due(root):
+    t = topic("w", "weekly", 2, every=2)
+    add_report(root, "w", date(2026, 10, 21))
+    assert not d.is_due(root, t, date(2026, 10, 28))
+    assert d.is_due(root, t, date(2026, 11, 4))
+
+
+def test_write_keeps_until_and_every(root):
+    d.write_topic(root, topic("k", "weekly", 1, every=3, until=date(2026, 12, 1)))
+    d.write_topic(root, topic("k", "weekly", 1, brief="new"))
+    loaded = d.load_topics(root)[0]
+    assert (
+        loaded["every"] == 3 and loaded["until"] == date(2026, 12, 1) and loaded["brief"] == "new"
+    )
+    d.write_topic(root, topic("k", "weekly", 1, every=1))
+    assert "every" not in d.load_topics(root)[0]

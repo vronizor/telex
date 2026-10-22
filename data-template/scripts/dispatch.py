@@ -15,6 +15,7 @@ CADENCES = ("daily", "weekly", "monthly")
 WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 LANGUAGES = ("en", "fr", "es", "ca", "de", "it")
 MAX_PER_RUN = 4
+MAX_EVERY = 12
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,59}$")
 
 
@@ -54,6 +55,28 @@ def _shift_month(day: date, months: int) -> date:
     return date(index // 12, index % 12 + 1, 1)
 
 
+def every(topic: dict) -> int:
+    try:
+        n = int(topic.get("every", 1))
+    except (TypeError, ValueError):
+        n = 1
+    return max(1, min(n, MAX_EVERY))
+
+
+def next_due(topic: dict, last: date) -> date:
+    """First day a topic is due again after a report on `last`, honouring its slot and `every`."""
+    n, cadence, slot = every(topic), topic["cadence"], topic.get("slot")
+    if cadence == "daily":
+        return last + timedelta(days=n)
+    if cadence == "weekly":
+        target = last + timedelta(days=7 * n)
+        if slot is None:
+            return target
+        return target - timedelta(days=(target.weekday() - slot) % 7)
+    month = _shift_month(last, n)
+    return month.replace(day=slot) if slot is not None else month
+
+
 def last_scheduled(topic: dict, today: date) -> date:
     cadence, slot = topic["cadence"], topic.get("slot")
     if cadence == "daily" or slot is None:
@@ -85,7 +108,7 @@ def is_due(root: Path, topic: dict, today: date) -> bool:
     if is_queued(root, topic["id"]):
         return True
     dates = report_dates(root, topic["id"])
-    return not dates or dates[-1] < last_scheduled(topic, today)
+    return not dates or today >= next_due(topic, dates[-1])
 
 
 def slot_loads(topics: list[dict], cadence: str) -> list[int]:
@@ -108,14 +131,23 @@ def pick_slot(topics: list[dict], cadence: str) -> int | None:
     return best if cadence == "weekly" else best + 1
 
 
-def describe_schedule(cadence: str, slot: int | None) -> str:
+def slot_label(cadence: str, slot: int | None) -> str | None:
+    if slot is None or cadence == "daily":
+        return None
+    return WEEKDAYS[slot] if cadence == "weekly" else f"{slot}{_suffix(slot)}"
+
+
+def describe_schedule(cadence: str, slot: int | None, n: int = 1) -> str:
+    unit = {"daily": "day", "weekly": "week", "monthly": "month"}[cadence]
+    base = f"every {unit}" if n == 1 else f"every {n} {unit}s"
     if cadence == "daily":
-        return "every day"
-    if slot is None:
-        return f"{cadence}, day not set yet"
+        return base
+    label = slot_label(cadence, slot)
+    if label is None:
+        return f"{base}, day not set yet"
     if cadence == "weekly":
-        return f"every {WEEKDAYS[slot]}"
-    return f"monthly on the {slot}{_suffix(slot)}"
+        return f"every {label}" if n == 1 else f"{base} on {label}"
+    return f"monthly on the {label}" if n == 1 else f"{base} on the {label}"
 
 
 def _suffix(n: int) -> str:
@@ -146,6 +178,8 @@ def dump_topic(topic: dict) -> str:
         f"active = {'true' if topic.get('active', True) else 'false'}",
         f"created = {topic.get('created') or today_local()}",
     ]
+    if every(topic) > 1:
+        lines.append(f"every = {every(topic)}")
     if isinstance(topic.get("until"), date):
         lines.append(f"until = {topic['until']}")
     lines += [
@@ -160,6 +194,10 @@ def write_topic(root: Path, topic: dict) -> Path:
     if topic["cadence"] not in CADENCES:
         raise ValueError(f"bad cadence: {topic['cadence']!r}")
     path = root / "topics" / f"{topic['id']}.toml"
+    if path.exists():
+        with path.open("rb") as f:
+            old = tomllib.load(f)
+        topic = {**{k: old[k] for k in ("until", "every") if k in old}, **topic}
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(dump_topic(topic), encoding="utf-8")
     return path
