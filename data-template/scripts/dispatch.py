@@ -89,7 +89,8 @@ def dump_sources(outlets: dict[str, dict]) -> str:
     for domain in sorted(outlets, key=lambda d: (order.get(outlets[d].get("tier"), 1), d)):
         info = outlets[domain]
         lines += ["", f'[outlets."{domain}"]']
-        lines += [f"{k} = {_toml_value(info[k])}" for k in OUTLET_KEYS if info.get(k) not in (None, "", [])]
+        keys = [k for k in OUTLET_KEYS if info.get(k) not in (None, "", [])]
+        lines += [f"{k} = {_toml_value(info[k])}" for k in keys]
     return "\n".join(lines) + "\n"
 
 

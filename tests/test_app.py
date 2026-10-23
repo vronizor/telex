@@ -352,7 +352,7 @@ def test_sources_page_and_edits(client, remote):
     data = tomllib.loads(remote_file(remote, "sources.toml"))
     assert data["outlets"]["example.org"] == {"tier": "prefer", "role": "voice"}
     voices = client.get("/sources?show=voice").text
-    assert "example.org" in voices and 't-prefer is-on' in voices
+    assert "example.org" in voices and "t-prefer is-on" in voices
     client.post("/sources/outlet", data={"domain": "example.org", "tier": ""})
     data = tomllib.loads(remote_file(remote, "sources.toml"))
     assert "tier" not in data["outlets"]["example.org"]
