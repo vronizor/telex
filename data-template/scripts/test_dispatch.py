@@ -178,3 +178,14 @@ def test_languages_migration_and_reader(root):
     result = d.plan(root, THU)
     assert result["read"] == ["en", "fr", "ca"]
     assert result["run"][0]["local"] is True
+
+
+def test_load_sources(root):
+    assert d.load_sources(root) == {}
+    (root / "sources.toml").write_text(
+        '[outlets."www.Blick.ch"]\nrole = "reporter"\ntier = "prefer"\nreach = "full"\n'
+        '[outlets."rt.com"]\nrole = "voice"\ntier = "nope"\n'
+    )
+    s = d.load_sources(root)
+    assert s["blick.ch"] == {"role": "reporter", "tier": "prefer", "reach": "full"}
+    assert s["rt.com"] == {"role": "voice"}

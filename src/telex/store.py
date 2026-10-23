@@ -52,6 +52,8 @@ class Report:
     body: str = ""
     story_html: str = ""
     searched: list[str] = field(default_factory=list)
+    contested: str = ""
+    unreachable: list[str] = field(default_factory=list)
 
 
 def source_map(text: str) -> dict[str, str]:
@@ -148,6 +150,8 @@ def parse_report(path: Path, topic_id: str) -> Report:
         body=body,
         story_html=render_markdown(drop_heading(story), sources=all_sources) if story else "",
         searched=[str(x) for x in meta.get("searched", []) if isinstance(x, str)],
+        contested=str(meta.get("contested", "")).strip(),
+        unreachable=[str(x) for x in meta.get("unreachable", []) if isinstance(x, str)],
     )
 
 

@@ -1,0 +1,14 @@
+# Outlets the dispatcher treats specially, keyed by domain (no "www.").
+# role: "reporter" | "voice"        tier: "prefer" | "avoid" (omit for neutral)
+# reach: "full" | "partial" | "headline" | "none", as of `checked`
+#
+# [outlets."example.org"]
+# role = "reporter"
+# tier = "prefer"
+# languages = ["en"]
+# country = "GB"
+# reach = "full"
+# checked = 2026-10-23
+# note = "free wire copy"
+
+[outlets]

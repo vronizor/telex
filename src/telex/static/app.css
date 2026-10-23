@@ -154,6 +154,7 @@ h1, h2, p { margin: 0; }
 .headline { margin: 10px 0 6px; font-size: 26px; line-height: 1.2; font-weight: var(--headline-weight); letter-spacing: -0.01em; }
 .report-meta { color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .notice { margin: 14px 0; padding: 10px 12px; background: var(--surface); border-radius: var(--radius); font-size: 15px; }
+.notice.contested { border-left: 3px solid var(--accent); }
 
 .report { margin-top: 18px; font-size: 16px; }
 .report h2 {

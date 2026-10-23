@@ -45,6 +45,26 @@ def load_reader(root: Path = ROOT) -> dict:
     return data
 
 
+ROLES = ("reporter", "voice")
+TIERS = ("prefer", "avoid")
+REACH = ("full", "partial", "headline", "none")
+
+
+def load_sources(root: Path = ROOT) -> dict[str, dict]:
+    path = root / "sources.toml"
+    if not path.exists():
+        return {}
+    outlets = tomllib.loads(path.read_text(encoding="utf-8")).get("outlets", {})
+    clean = {}
+    for domain, info in outlets.items():
+        info = dict(info)
+        for key, allowed in (("role", ROLES), ("tier", TIERS), ("reach", REACH)):
+            if info.get(key) not in allowed:
+                info.pop(key, None)
+        clean[domain.lower().removeprefix("www.")] = info
+    return clean
+
+
 def report_dates(root: Path, topic_id: str) -> list[date]:
     folder = root / "reports" / topic_id
     dates = []

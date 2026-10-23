@@ -22,6 +22,9 @@
     {% if report.sources %} · src {{ report.sources }}{% endif %}
     {% if report.searched %} · {{ report.searched | join(",") }}{% endif %}
   </p>
+  {% if report.contested %}
+  <p class="notice contested"><span class="label c-contested">Contested</span> {{ report.contested }}</p>
+  {% endif %}
   {% if report.story_html %}
   <details class="story">
     <summary class="label">Story so far</summary>

@@ -320,6 +320,7 @@ def test_languages_on_topic_and_report(client, remote):
     page = client.get("/t/bcn-rent-cap").text
     assert "Brief · every Wed · local" in page
     assert "· ca,es,en" in page
+    assert 'class="label c-contested">Contested</span> Size of the rent drop' in page
     client.post(
         "/t/bcn-rent-cap/edit",
         data={
