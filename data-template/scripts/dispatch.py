@@ -65,6 +65,60 @@ def load_sources(root: Path = ROOT) -> dict[str, dict]:
     return clean
 
 
+OUTLET_KEYS = ("role", "tier", "languages", "country", "reach", "checked", "note")
+DOMAIN_RE = re.compile(r"^[a-z0-9-]+(\.[a-z0-9-]+)+$")
+
+
+def _toml_value(value) -> str:
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, list):
+        return json.dumps([str(v) for v in value], ensure_ascii=False)
+    return json.dumps(str(value), ensure_ascii=False)
+
+
+def dump_sources(outlets: dict[str, dict]) -> str:
+    order = {"prefer": 0, None: 1, "avoid": 2}
+    lines = [
+        '# Outlets the dispatcher treats specially, keyed by domain (no "www.").',
+        '# role: "reporter" | "voice"        tier: "prefer" | "avoid" (omit for neutral)',
+        '# reach: "full" | "partial" | "headline" | "none", as of `checked`',
+        "",
+        "[outlets]",
+    ]
+    for domain in sorted(outlets, key=lambda d: (order.get(outlets[d].get("tier"), 1), d)):
+        info = outlets[domain]
+        lines += ["", f'[outlets."{domain}"]']
+        lines += [f"{k} = {_toml_value(info[k])}" for k in OUTLET_KEYS if info.get(k) not in (None, "", [])]
+    return "\n".join(lines) + "\n"
+
+
+def set_outlet(root: Path, domain: str, **changes) -> Path:
+    domain = domain.lower().removeprefix("www.")
+    if not DOMAIN_RE.match(domain):
+        raise ValueError(f"bad domain: {domain!r}")
+    outlets = load_sources(root)
+    info = outlets.setdefault(domain, {})
+    for key, value in changes.items():
+        allowed = {"role": ROLES, "tier": TIERS}.get(key)
+        if allowed is None or (value is not None and value not in allowed):
+            raise ValueError(f"bad {key}: {value!r}")
+        if value is None:
+            info.pop(key, None)
+        else:
+            info[key] = value
+    path = root / "sources.toml"
+    path.write_text(dump_sources(outlets), encoding="utf-8")
+    return path
+
+
+def write_reader(root: Path, read: list[str]) -> Path:
+    langs = [lang for lang in LANGUAGES if lang in read] or ["en"]
+    path = root / "reader.toml"
+    path.write_text(f"read = {json.dumps(langs)}\n", encoding="utf-8")
+    return path
+
+
 def report_dates(root: Path, topic_id: str) -> list[date]:
     folder = root / "reports" / topic_id
     dates = []

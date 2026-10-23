@@ -189,3 +189,24 @@ def test_load_sources(root):
     s = d.load_sources(root)
     assert s["blick.ch"] == {"role": "reporter", "tier": "prefer", "reach": "full"}
     assert s["rt.com"] == {"role": "voice"}
+
+
+def test_set_outlet_round_trip(root):
+    (root / "sources.toml").write_text(
+        '[outlets]\n[outlets."blick.ch"]\nrole = "reporter"\nlanguages = ["fr", "de"]\n'
+        'reach = "full"\nchecked = 2026-10-23\nnote = "Swiss \\"tabloid\\""\n'
+    )
+    d.set_outlet(root, "www.Blick.ch", tier="prefer")
+    d.set_outlet(root, "trtfrancais.com", role="voice", tier="avoid")
+    s = d.load_sources(root)
+    assert s["blick.ch"]["tier"] == "prefer" and s["blick.ch"]["note"] == 'Swiss "tabloid"'
+    assert str(s["blick.ch"]["checked"]) == "2026-10-23"
+    assert s["trtfrancais.com"] == {"role": "voice", "tier": "avoid"}
+    d.set_outlet(root, "blick.ch", tier=None)
+    assert "tier" not in d.load_sources(root)["blick.ch"]
+    with pytest.raises(ValueError):
+        d.set_outlet(root, "blick.ch", tier="love")
+    with pytest.raises(ValueError):
+        d.set_outlet(root, "../evil", tier="avoid")
+    d.write_reader(root, ["fr", "xx", "en"])
+    assert d.load_reader(root)["read"] == ["en", "fr"]

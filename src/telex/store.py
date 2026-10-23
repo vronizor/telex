@@ -2,8 +2,9 @@ import importlib.util
 import re
 import tomllib
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from html import escape
 from pathlib import Path
 from types import ModuleType
@@ -187,6 +188,89 @@ class Topic:
         return self.latest.status
 
 
+@dataclass
+class Outlet:
+    domain: str
+    info: dict
+    cited: int = 0
+    last_cited: date | None = None
+    unreachable: int = 0
+    topics: set[str] = field(default_factory=set)
+
+    @property
+    def listed(self) -> bool:
+        return bool(self.info)
+
+    @property
+    def role(self) -> str | None:
+        return self.info.get("role")
+
+    @property
+    def tier(self) -> str | None:
+        return self.info.get("tier")
+
+    @property
+    def reach(self) -> str | None:
+        return self.info.get("reach")
+
+    @property
+    def note(self) -> str:
+        return self.info.get("note", "")
+
+    @property
+    def languages(self) -> list[str]:
+        return list(self.info.get("languages", []))
+
+
+@dataclass
+class WeekShare:
+    start: date
+    cited: int
+    prefer: float
+    voice: float
+    avoid: float
+    top3: float
+
+
+def week_share(start: date, cited: list[str], outlets: dict[str, Outlet]) -> WeekShare:
+    n = len(cited)
+    tiers = Counter(outlets[d].tier for d in cited)
+    voices = sum(1 for d in cited if outlets[d].role == "voice")
+    top3 = sum(c for _, c in Counter(cited).most_common(3))
+    return WeekShare(
+        start=start,
+        cited=n,
+        prefer=tiers["prefer"] / n,
+        voice=voices / n,
+        avoid=tiers["avoid"] / n,
+        top3=top3 / n,
+    )
+
+
+def host_of(url: str) -> str:
+    return urlsplit(url).netloc.lower().split(":")[0].removeprefix("www.")
+
+
+def match_domain(host: str, known: dict) -> str:
+    parts = host.split(".")
+    for i in range(len(parts) - 1):
+        candidate = ".".join(parts[i:])
+        if candidate in known:
+            return candidate
+    return host
+
+
+def read_front(path: Path) -> tuple[dict, str]:
+    text = path.read_text(encoding="utf-8")
+    if not text.startswith("+++"):
+        return {}, text
+    _, front, body = text.split("+++", 2)
+    try:
+        return tomllib.loads(front), body
+    except tomllib.TOMLDecodeError:
+        return {}, body
+
+
 class Store:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -284,6 +368,41 @@ class Store:
             data["created"] = previous.get("created") if previous else self.now().date()
         path = d.write_topic(self.root, data)
         return str(path.relative_to(self.root))
+
+    def sources(self, weeks: int = 6) -> tuple[list[Outlet], list[WeekShare]]:
+        known = self.d.load_sources(self.root)
+        outlets = {domain: Outlet(domain, info) for domain, info in known.items()}
+        by_week: dict[date, list[str]] = {}
+        for raw in self.raw_topics():
+            for day in self.d.report_dates(self.root, raw["id"]):
+                meta, body = read_front(self.root / "reports" / raw["id"] / f"{day}.md")
+                for url in source_map(body).values():
+                    domain = match_domain(host_of(url), known)
+                    if not domain:
+                        continue
+                    o = outlets.setdefault(domain, Outlet(domain, {}))
+                    o.cited += 1
+                    o.topics.add(raw["id"])
+                    o.last_cited = max(o.last_cited or day, day)
+                    by_week.setdefault(day - timedelta(days=day.weekday()), []).append(domain)
+                for host in meta.get("unreachable", []):
+                    if isinstance(host, str) and host.strip():
+                        domain = match_domain(host.lower().removeprefix("www."), known)
+                        outlets.setdefault(domain, Outlet(domain, {})).unreachable += 1
+        shares = [
+            week_share(start, by_week[start], outlets)
+            for start in sorted(by_week, reverse=True)[:weeks]
+        ]
+        return list(outlets.values()), shares
+
+    def set_outlet(self, domain: str, **changes) -> str:
+        return str(self.d.set_outlet(self.root, domain, **changes).relative_to(self.root))
+
+    def reader(self) -> list[str]:
+        return self.d.load_reader(self.root)["read"]
+
+    def set_reader(self, read: list[str]) -> str:
+        return str(self.d.write_reader(self.root, read).relative_to(self.root))
 
     def queue(self, topic_id: str) -> str:
         path = self.root / "queue" / topic_id

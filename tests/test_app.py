@@ -334,3 +334,30 @@ def test_languages_on_topic_and_report(client, remote):
     data = tomllib.loads(remote_file(remote, "topics/bcn-rent-cap.toml"))
     assert data["local"] is False and data["extra_languages"] == ["fr"]
     assert "every Wed · fr" in client.get("/t/bcn-rent-cap").text
+
+
+def test_sources_page_and_edits(client, remote):
+    page = client.get("/sources").text
+    assert "example.org" in page and "cited " in page
+    assert "Citations by week" in page
+    assert "rts.ch" in client.get("/sources?show=unreadable").text
+    assert "unreachable ×" in client.get("/sources?show=unreadable").text
+    r = client.post(
+        "/sources/outlet",
+        data={"domain": "example.org", "tier": "prefer", "show": "cited"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 303 and r.headers["location"].endswith("#o-example.org")
+    client.post("/sources/outlet", data={"domain": "example.org", "role": "voice"})
+    data = tomllib.loads(remote_file(remote, "sources.toml"))
+    assert data["outlets"]["example.org"] == {"tier": "prefer", "role": "voice"}
+    voices = client.get("/sources?show=voice").text
+    assert "example.org" in voices and 't-prefer is-on' in voices
+    client.post("/sources/outlet", data={"domain": "example.org", "tier": ""})
+    data = tomllib.loads(remote_file(remote, "sources.toml"))
+    assert "tier" not in data["outlets"]["example.org"]
+    bad = client.post("/sources/outlet", data={"domain": "../x", "tier": "avoid"})
+    assert bad.status_code == 400
+    client.post("/sources/reader", data={"read": ["fr", "en", "zz"]})
+    assert tomllib.loads(remote_file(remote, "reader.toml"))["read"] == ["en", "fr"]
+    assert 'href="/sources"' in client.get("/").text

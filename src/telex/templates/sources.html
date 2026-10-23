@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Sources · Telex{% endblock %}
+{% block content %}
+<a class="back label" href="/">← Topics</a>
+<h1 class="headline">Sources</h1>
+<p class="statusline label">{{ counts.listed }} listed · {{ counts.prefer }} preferred · {{ counts.voice }} voices · {{ counts.cited }} cited in reports</p>
+
+{% if shares %}
+<section aria-label="Citations by week">
+  <h2 class="section-label label">── Citations by week</h2>
+  <table class="shares label">
+    <thead><tr><th>Week of</th><th>Cites</th><th>Pref</th><th>Voice</th><th>Avoid</th><th>Top 3</th></tr></thead>
+    <tbody>
+    {% for w in shares %}
+    <tr><td>{{ w.start.strftime("%d.%m") }}</td><td>{{ w.cited }}</td><td>{{ pct(w.prefer) }}</td><td>{{ pct(w.voice) }}</td><td>{{ pct(w.avoid) }}</td><td>{{ pct(w.top3) }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="week-caption label">Share of citations from preferred outlets, voices and avoided outlets. Top 3 is the share taken by the three most-cited domains: high means narrow.</p>
+</section>
+{% endif %}
+
+<form class="reader-form" method="post" action="/sources/reader">
+  <fieldset class="field">
+    <legend class="label">Languages I read</legend>
+    <div class="chips">
+      {% for lang in languages %}
+      <label><input type="checkbox" name="read" value="{{ lang }}" {% if lang in read %}checked{% endif %}><span>{{ lang }}</span></label>
+      {% endfor %}
+      <button class="btn" type="submit">Save</button>
+    </div>
+  </fieldset>
+</form>
+
+<nav class="filters label" aria-label="Filter outlets">
+  {% for key, name in filters %}
+  <a href="/sources?show={{ key }}" class="{% if key == show %}is-on{% endif %}">{{ name }}</a>
+  {% endfor %}
+</nav>
+
+{% if not outlets %}
+<p class="notice">Nothing here yet.</p>
+{% endif %}
+{% for o in outlets %}
+<div class="src-item" id="o-{{ o.domain }}">
+  <div class="src-head">
+    <span class="label src-domain">{{ o.domain }}</span>
+    {% if o.cited %}<span class="label muted">cited {{ o.cited }}</span>{% endif %}
+  </div>
+  <p class="item-meta label">
+    {{ o.reach or "reach ?" }}{% if o.languages %} · {{ o.languages | join(",") }}{% endif %}
+    {% if o.last_cited %} · last {{ o.last_cited | short_date(today) }}{% endif %}
+    {% if o.topics %} · {{ o.topics | length }} topic{{ "s" if o.topics | length > 1 }}{% endif %}
+    {% if o.unreachable %} · <span class="is-error">unreachable ×{{ o.unreachable }}</span>{% endif %}
+    {% if not o.listed %} · not listed{% endif %}
+  </p>
+  {% if o.note %}<p class="item-topic">{{ o.note }}</p>{% endif %}
+  <form class="src-controls" method="post" action="/sources/outlet">
+    <input type="hidden" name="domain" value="{{ o.domain }}">
+    <input type="hidden" name="show" value="{{ show }}">
+    <div class="toggles" role="group" aria-label="Tier">
+      <button type="submit" name="tier" value="prefer" class="t-prefer{% if o.tier == 'prefer' %} is-on{% endif %}">prefer</button>
+      <button type="submit" name="tier" value="" class="{% if not o.tier %}is-on{% endif %}">neutral</button>
+      <button type="submit" name="tier" value="avoid" class="t-warn{% if o.tier == 'avoid' %} is-on{% endif %}">avoid</button>
+    </div>
+    <div class="toggles" role="group" aria-label="Role">
+      <button type="submit" name="role" value="reporter" class="{% if o.role == 'reporter' %}is-on{% endif %}">reporter</button>
+      <button type="submit" name="role" value="voice" class="t-warn{% if o.role == 'voice' %} is-on{% endif %}">voice</button>
+      <button type="submit" name="role" value="" class="{% if not o.role %}is-on{% endif %}">?</button>
+    </div>
+  </form>
+</div>
+{% endfor %}
+{% endblock %}

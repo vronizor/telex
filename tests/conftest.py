@@ -15,6 +15,7 @@ headline = "New reference index published; landlord groups appeal"
 since = 2026-10-14
 searched = ["ca", "es", "en"]
 contested = "Size of the rent drop: Generalitat vs landlord associations"
+unreachable = ["www.rts.ch"]
 +++
 
 ## Story so far

@@ -385,6 +385,92 @@ def refresh_topic(topic_id: str):
     return RedirectResponse(f"/t/{topic_id}", status_code=303)
 
 
+SOURCE_FILTERS = (
+    ("cited", "Cited"),
+    ("prefer", "Preferred"),
+    ("voice", "Voices"),
+    ("unreadable", "Unreadable"),
+    ("all", "All"),
+)
+TIER_ORDER = {"prefer": 0, None: 1, "avoid": 2}
+
+
+def outlet_order(o, show: str) -> tuple:
+    if show == "cited":
+        return (-o.cited, o.domain)
+    return (TIER_ORDER.get(o.tier, 1), o.domain)
+
+
+def pct(x: float) -> str:
+    return f"{round(x * 100)}%"
+
+
+templates.env.globals["pct"] = pct
+
+
+@app.get("/sources", response_class=HTMLResponse)
+def sources_page(request: Request, show: str = "cited"):
+    if show not in dict(SOURCE_FILTERS):
+        show = "cited"
+    outlets, shares = store.sources()
+    keep = {
+        "cited": lambda o: o.cited > 0,
+        "prefer": lambda o: o.tier == "prefer",
+        "voice": lambda o: o.role == "voice",
+        "unreadable": lambda o: o.reach in ("headline", "none") or o.unreachable > 0,
+        "all": lambda o: True,
+    }[show]
+    shown = sorted(filter(keep, outlets), key=lambda o: outlet_order(o, show))
+    counts = {
+        "listed": sum(o.listed for o in outlets),
+        "prefer": sum(o.tier == "prefer" for o in outlets),
+        "voice": sum(o.role == "voice" for o in outlets),
+        "cited": sum(o.cited > 0 for o in outlets),
+    }
+    return render(
+        request,
+        "sources.html",
+        outlets=shown,
+        shares=shares,
+        counts=counts,
+        show=show,
+        filters=SOURCE_FILTERS,
+        read=store.reader(),
+        languages=store.d.LANGUAGES,
+    )
+
+
+@app.post("/sources/outlet")
+async def update_outlet(request: Request):
+    form = await request.form()
+    domain = str(form.get("domain", ""))
+    show = str(form.get("show", "cited"))
+    changes = {k: (str(form[k]) or None) for k in ("tier", "role") if k in form}
+    if not changes:
+        raise HTTPException(400, "Nothing to change")
+    try:
+        path = store.set_outlet(domain, **changes)
+        what = ", ".join(f"{k} {v or 'unset'}" for k, v in changes.items())
+        repo.commit_and_push([path], f"sources: {domain} {what}")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except GitError as exc:
+        raise HTTPException(502, f"Could not save: {exc}") from exc
+    target = show if show in dict(SOURCE_FILTERS) else "cited"
+    return RedirectResponse(f"/sources?show={target}#o-{quote(domain)}", status_code=303)
+
+
+@app.post("/sources/reader")
+async def update_reader(request: Request):
+    form = await request.form()
+    path = store.set_reader([str(x) for x in form.getlist("read")])
+    try:
+        repo.commit_and_push([path], "reader: languages")
+    except GitError as exc:
+        raise HTTPException(502, f"Could not save: {exc}") from exc
+    return RedirectResponse("/sources", status_code=303)
+
+
 @app.post("/sync")
 def sync(back: str = Form("/")):
     pull_and_build()
