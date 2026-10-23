@@ -1,4 +1,5 @@
 import os
+import re
 from dataclasses import dataclass
 from datetime import time
 from functools import lru_cache
@@ -6,6 +7,10 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+GITHUB_RE = re.compile(
+    r"^(?:git@github\.com:|ssh://git@github\.com/|https://github\.com/)"
+    r"([\w.-]+/[\w.-]+?)(?:\.git)?/?$"
+)
 
 
 @dataclass(frozen=True)
@@ -25,6 +30,11 @@ class Settings:
     @property
     def checkout(self) -> Path:
         return self.data_dir / "repo"
+
+    @property
+    def github_repo(self) -> str | None:
+        m = GITHUB_RE.match(self.repo_url.strip())
+        return m.group(1) if m else None
 
 
 @lru_cache

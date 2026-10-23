@@ -333,6 +333,22 @@ def chat_prompt(title: str, report: Report, limit: int = CHAT_LIMIT) -> str:
     return "\n\n".join(parts)[:limit]
 
 
+def report_path(report: Report) -> str:
+    return f"reports/{report.topic_id}/{report.day.isoformat()}.md"
+
+
+def pointer_prompt(title: str, report: Report, github_repo: str, sha: str) -> str:
+    folder = f"reports/{report.topic_id}/"
+    return (
+        f'I\'m reading my Telex briefing on "{title}" ({report.day:%d %b %Y}).\n\n'
+        f"Context: GitHub repo {github_repo} at commit {sha}, file {report_path(report)}. "
+        f"Read that report first. Open earlier reports in {folder} only if my question "
+        "needs the history (e.g. how the story drifted). Use its sources and fresh "
+        "searches as needed.\n\n"
+        "If there's no question below, just confirm you've read it and wait for mine."
+    )
+
+
 def full_text(title: str, report: Report) -> str:
     return f"# {title} — {report.day.isoformat()}\n\n{report.headline}\n\n{report.body.strip()}\n"
 

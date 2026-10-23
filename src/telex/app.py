@@ -20,7 +20,7 @@ from fastapi.templating import Jinja2Templates
 from telex import edition
 from telex.config import get_settings
 from telex.gitrepo import GitError, Repo
-from telex.store import Store, Topic, chat_prompt, full_text
+from telex.store import Store, Topic, chat_prompt, full_text, pointer_prompt, report_path
 
 HERE = Path(__file__).parent
 STATIC_DIR = HERE / "static"
@@ -190,7 +190,14 @@ def topic_view(request: Request, topic: Topic, report):
     history = [store.report(topic.id, day) for day in reversed(topic.report_days[-24:])]
     chat_url = copy_text = None
     if report is not None:
-        chat_url = "https://claude.ai/new?q=" + quote(chat_prompt(topic.title, report), safe="")
+        gh = settings.github_repo
+        sha = repo.last_commit(report_path(report)) if gh else None
+        prompt = (
+            pointer_prompt(topic.title, report, gh, sha)
+            if gh and sha
+            else chat_prompt(topic.title, report)
+        )
+        chat_url = "https://claude.ai/new?q=" + quote(prompt, safe="")
         copy_text = full_text(topic.title, report)
     return render(
         request,

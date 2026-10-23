@@ -31,6 +31,11 @@ class Repo:
             raise GitError(f"git {args[0]}: {(result.stderr or result.stdout).strip()}")
         return result.stdout
 
+    def last_commit(self, path: str) -> str | None:
+        result = self._git("log", "-1", "--format=%H", "--", path)
+        sha = result.stdout.strip()
+        return sha if result.returncode == 0 and sha else None
+
     def ensure(self) -> None:
         if (self.path / ".git").exists():
             return

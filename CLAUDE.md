@@ -8,7 +8,7 @@
 - UI: server-rendered Jinja, one small `app.js`, no build step. Mono (`.label`) for labels, tags, dates and codes; sans for reading. Light and dark via CSS variables; check both.
 - E-reader edition: `edition.py` builds a weekly EPUB (ebooklib, Pillow cover) into `$DATA_DIR/editions/`, rebuilt when the week's reports change (digest in the `.json`; bump `FORMAT_VERSION` when the output format changes). E-ink: greyscale, no flex/grid in `static/epub.css`. Served at `/opds/`.
 - Identity: `static/icon.svg` is the source (amber punched tape spelling TELEX in ITA2); `apple-touch-icon.png` is a 180px render of it. Wordmark = mono "TELEX" + accent block cursor. The EPUB cover draws the same tape with `draw_tape`.
-- "Chat about this" links to `claude.ai/new?q=` with a compact prompt (`chat_prompt`, capped at 1800 chars because long prefilled URLs fail); "Copy full report" puts the whole Markdown on the clipboard.
+- "Chat about this" links to `claude.ai/new?q=`. When `TELEX_REPO_URL` is on GitHub, the prompt is a pointer (`pointer_prompt`): repo, the last commit touching the report file, and its path, so Claude reads the full report and can open earlier ones. Otherwise it falls back to a compact pasted prompt (`chat_prompt`, capped at 1800 chars because long prefilled URLs fail). "Copy full report" puts the whole Markdown on the clipboard.
 - Access: Tailscale Services (`tailscale serve --service=svc:telex`) proxies to `127.0.0.1:$APP_PORT`; no Caddy, no login.
 - Conventions: polars (never pandas) if data work appears, few dependencies, minimal comments, ruff.
 

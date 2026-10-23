@@ -217,6 +217,44 @@ def test_chat_link_and_copy(client):
     assert "Chat about this" not in client.get("/t/paris-velo").text
 
 
+def test_chat_link_points_to_report(client, monkeypatch):
+    import dataclasses
+    import re as _re
+    import subprocess
+    from urllib.parse import unquote
+
+    from telex import app as app_module
+
+    gh = dataclasses.replace(app_module.settings, repo_url="git@github.com:you/telex-data.git")
+    monkeypatch.setattr(app_module, "settings", gh)
+    page = client.get("/t/bcn-rent-cap").text
+    m = _re.search(r'href="https://claude\.ai/new\?q=([^"]+)"', page)
+    prompt = unquote(m.group(1).replace("&amp;", "&"))
+    day = app_module.store.get("bcn-rent-cap").latest.day.isoformat()
+    sha = subprocess.run(
+        ["git", "log", "-1", "--format=%H", "--", f"reports/bcn-rent-cap/{day}.md"],
+        cwd=app_module.store.root,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert sha
+    assert f"GitHub repo you/telex-data at commit {sha}" in prompt
+    assert f"file reports/bcn-rent-cap/{day}.md" in prompt
+    assert "[GENCAT]" not in prompt
+
+
+def test_github_repo_parsing():
+    from telex.config import Settings
+
+    def slug(url):
+        return Settings(url, None, None, None, 0, "", "").github_repo
+
+    assert slug("git@github.com:you/telex-data.git") == "you/telex-data"
+    assert slug("https://github.com/you/telex-data") == "you/telex-data"
+    assert slug("ssh://git@github.com/you/telex-data.git") == "you/telex-data"
+    assert slug("/tmp/remote.git") is None
+
+
 def test_every_n(client, remote):
     import tomllib as _t
 
