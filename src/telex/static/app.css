@@ -338,3 +338,14 @@ h1, h2, p { margin: 0; }
 .toggles button.t-prefer.is-on { background: var(--add); color: var(--bg); }
 .toggles button.t-warn.is-on { background: var(--accent); color: var(--accent-ink); }
 .toggles button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.add-outlet { margin-top: 24px; }
+.add-row { display: flex; gap: 8px; }
+.add-row input[type="text"] { flex: 1; min-width: 0; }
+.add-row .btn { min-height: 44px; }
+.src-test { margin-top: 6px; }
+.src-test .btn-link { min-height: 36px; font-size: 11px; color: var(--muted); }
+.rk-row { display: inline-flex; gap: 2px; margin-right: 4px; letter-spacing: 0; }
+.rk-full { color: var(--add); }
+.rk-partial { color: var(--accent); }
+.rk-headline { color: var(--muted); }
+.rk-none { color: var(--danger); }

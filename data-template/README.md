@@ -6,6 +6,8 @@ Private data for the Telex app: topics, reports and the instructions for the dai
 topics/<id>.toml           one file per topic (title, cadence, slot, local, extra_languages, active, created, brief)
 reader.toml                the languages the owner reads: read = ["en", "fr"]
 sources.toml               outlets by domain: role (reporter/voice), tier (prefer/avoid), reach
+reach/queue/<domain>       an empty file means "test this outlet at the next run"
+reach/history/<date>.tsv   results of each reachability check (REACH.md)
 reports/<id>/<date>.md     one report per run, TOML front matter between +++ lines
 queue/<id>                 an empty file means "refresh at the next run"
 scripts/dispatch.py        scheduling and file format, stdlib only; also imported by the web app

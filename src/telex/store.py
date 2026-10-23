@@ -196,6 +196,8 @@ class Outlet:
     last_cited: date | None = None
     unreachable: int = 0
     topics: set[str] = field(default_factory=set)
+    history: list[tuple[date, str]] = field(default_factory=list)
+    queued: bool = False
 
     @property
     def listed(self) -> bool:
@@ -389,6 +391,11 @@ class Store:
                     if isinstance(host, str) and host.strip():
                         domain = match_domain(host.lower().removeprefix("www."), known)
                         outlets.setdefault(domain, Outlet(domain, {})).unreachable += 1
+        for domain in self.d.reach_queue(self.root):
+            outlets.setdefault(domain, Outlet(domain, {})).queued = True
+        for domain, checks in self.d.reach_history(self.root).items():
+            if domain in outlets:
+                outlets[domain].history = checks[-8:]
         shares = [
             week_share(start, by_week[start], outlets)
             for start in sorted(by_week, reverse=True)[:weeks]
@@ -397,6 +404,9 @@ class Store:
 
     def set_outlet(self, domain: str, **changes) -> str:
         return str(self.d.set_outlet(self.root, domain, **changes).relative_to(self.root))
+
+    def queue_reach(self, domain: str) -> str:
+        return str(self.d.queue_reach(self.root, domain).relative_to(self.root))
 
     def reader(self) -> list[str]:
         return self.d.load_reader(self.root)["read"]

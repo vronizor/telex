@@ -32,6 +32,18 @@
   </fieldset>
 </form>
 
+<form class="add-outlet" method="post" action="/sources/test">
+  <label class="field">
+    <span class="label">Test an outlet</span>
+    <span class="add-row">
+      <input name="domain" type="text" inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="letemps.ch" required>
+      <input type="hidden" name="show" value="all">
+      <button class="btn" type="submit">Queue test</button>
+    </span>
+  </label>
+  <p class="week-caption label">Tests run with the next daily dispatch, up to {{ max_tests }} per run; every listed outlet is retested on the 1st of each month.</p>
+</form>
+
 <nav class="filters label" aria-label="Filter outlets">
   {% for key, name in filters %}
   <a href="/sources?show={{ key }}" class="{% if key == show %}is-on{% endif %}">{{ name }}</a>
@@ -48,11 +60,13 @@
     {% if o.cited %}<span class="label muted">cited {{ o.cited }}</span>{% endif %}
   </div>
   <p class="item-meta label">
+    {% if o.history %}<span class="rk-row" aria-label="Recent reachability checks">{% for day, r in o.history %}<span class="rk rk-{{ r }}" title="{{ day.strftime('%d.%m.%y') }}: {{ r }}">{{ marks[r] }}</span>{% endfor %}</span>{% endif %}
     {{ o.reach or "reach ?" }}{% if o.languages %} · {{ o.languages | join(",") }}{% endif %}
     {% if o.last_cited %} · last {{ o.last_cited | short_date(today) }}{% endif %}
     {% if o.topics %} · {{ o.topics | length }} topic{{ "s" if o.topics | length > 1 }}{% endif %}
     {% if o.unreachable %} · <span class="is-error">unreachable ×{{ o.unreachable }}</span>{% endif %}
     {% if not o.listed %} · not listed{% endif %}
+    {% if o.queued %} · <span class="c-add">test queued</span>{% endif %}
   </p>
   {% if o.note %}<p class="item-topic">{{ o.note }}</p>{% endif %}
   <form class="src-controls" method="post" action="/sources/outlet">
@@ -69,6 +83,13 @@
       <button type="submit" name="role" value="" class="{% if not o.role %}is-on{% endif %}">?</button>
     </div>
   </form>
+  {% if not o.queued %}
+  <form class="src-test" method="post" action="/sources/test">
+    <input type="hidden" name="domain" value="{{ o.domain }}">
+    <input type="hidden" name="show" value="{{ show }}">
+    <button class="btn-link label" type="submit">Test reachability</button>
+  </form>
+  {% endif %}
 </div>
 {% endfor %}
 {% endblock %}

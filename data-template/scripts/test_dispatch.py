@@ -1,5 +1,5 @@
 import tomllib
-from datetime import date
+from datetime import date, timedelta
 
 import dispatch as d
 import pytest
@@ -210,3 +210,34 @@ def test_set_outlet_round_trip(root):
         d.set_outlet(root, "../evil", tier="avoid")
     d.write_reader(root, ["fr", "xx", "en"])
     assert d.load_reader(root)["read"] == ["en", "fr"]
+
+
+def test_reach_queue_record_history(root, tmp_path):
+    (root / "sources.toml").write_text(
+        '[outlets]\n[outlets."blick.ch"]\nrole = "reporter"\ntier = "prefer"\nreach = "full"\n'
+    )
+    d.queue_reach(root, "www.RTS.ch")
+    assert d.reach_queue(root) == ["rts.ch"]
+    assert d.plan(root, THU)["reach_queue"] == 1
+    assert [c["domain"] for c in d.reach_plan(root)["check"]] == ["rts.ch"]
+    assert [c["domain"] for c in d.reach_plan(root, everything=True)["check"]] == [
+        "blick.ch",
+        "rts.ch",
+    ]
+    results = tmp_path / "r.tsv"
+    results.write_text(
+        "domain\tsearch\treach\tnote\nrts.ch\ty\theadline\tfetch refused\nblick.ch\tyes\tfull\t\n"
+    )
+    changed = d.record_reach(root, THU, d.read_reach_rows(results))
+    assert f"reach/history/{THU}.tsv" in changed and "reach/queue/rts.ch" in changed
+    assert d.reach_queue(root) == []
+    s = d.load_sources(root)
+    assert s["rts.ch"]["reach"] == "headline" and str(s["rts.ch"]["checked"]) == str(THU)
+    assert s["blick.ch"]["tier"] == "prefer"
+    later = THU + timedelta(days=30)
+    d.record_reach(root, later, [{"domain": "rts.ch", "search": "y", "reach": "full", "note": ""}])
+    assert d.reach_history(root)["rts.ch"] == [(THU, "headline"), (later, "full")]
+    bad = tmp_path / "bad.tsv"
+    bad.write_text("domain\tsearch\treach\tnote\nrts.ch\ty\tmaybe\t\n")
+    with pytest.raises(ValueError):
+        d.read_reach_rows(bad)

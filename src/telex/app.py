@@ -393,6 +393,7 @@ SOURCE_FILTERS = (
     ("all", "All"),
 )
 TIER_ORDER = {"prefer": 0, None: 1, "avoid": 2}
+REACH_MARKS = {"full": "●", "partial": "◐", "headline": "○", "none": "×"}
 
 
 def outlet_order(o, show: str) -> tuple:
@@ -437,6 +438,8 @@ def sources_page(request: Request, show: str = "cited"):
         filters=SOURCE_FILTERS,
         read=store.reader(),
         languages=store.d.LANGUAGES,
+        max_tests=store.d.MAX_REACH_PER_RUN,
+        marks=REACH_MARKS,
     )
 
 
@@ -457,6 +460,22 @@ async def update_outlet(request: Request):
     except GitError as exc:
         raise HTTPException(502, f"Could not save: {exc}") from exc
     target = show if show in dict(SOURCE_FILTERS) else "cited"
+    return RedirectResponse(f"/sources?show={target}#o-{quote(domain)}", status_code=303)
+
+
+@app.post("/sources/test")
+async def test_outlet(request: Request):
+    form = await request.form()
+    show = str(form.get("show", "all"))
+    try:
+        domain = store.d.clean_domain(str(form.get("domain", "")))
+        path = store.queue_reach(domain)
+        repo.commit_and_push([path], f"reach: queue {domain}")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except GitError as exc:
+        raise HTTPException(502, f"Could not queue the test: {exc}") from exc
+    target = show if show in dict(SOURCE_FILTERS) else "all"
     return RedirectResponse(f"/sources?show={target}#o-{quote(domain)}", status_code=303)
 
 

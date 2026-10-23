@@ -361,3 +361,27 @@ def test_sources_page_and_edits(client, remote):
     client.post("/sources/reader", data={"read": ["fr", "en", "zz"]})
     assert tomllib.loads(remote_file(remote, "reader.toml"))["read"] == ["en", "fr"]
     assert 'href="/sources"' in client.get("/").text
+
+
+def test_reachability_queue_and_history(client, remote):
+    from telex import app as app_module
+
+    r = client.post("/sources/test", data={"domain": "https://www.LeTemps.ch/", "show": "all"})
+    assert r.status_code == 400
+    r = client.post(
+        "/sources/test", data={"domain": "www.LeTemps.ch", "show": "all"}, follow_redirects=False
+    )
+    assert r.status_code == 303 and r.headers["location"] == "/sources?show=all#o-letemps.ch"
+    assert remote_file(remote, "reach/queue/letemps.ch") == ""
+    page = client.get("/sources?show=all").text
+    assert "letemps.ch" in page and "test queued" in page
+    root = app_module.store.root
+    (root / "reach" / "history").mkdir(parents=True, exist_ok=True)
+    (root / "reach" / "history" / "2026-10-01.tsv").write_text(
+        "domain\tsearch\treach\tnote\nexample.org\ty\theadline\t\n"
+    )
+    (root / "reach" / "history" / "2026-11-01.tsv").write_text(
+        "domain\tsearch\treach\tnote\nexample.org\ty\tfull\t\n"
+    )
+    page = client.get("/sources").text
+    assert 'title="01.10.26: headline">○</span><span class="rk rk-full"' in page

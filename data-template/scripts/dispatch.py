@@ -1,6 +1,7 @@
 """Scheduling and file-format helpers shared by the dispatcher run and the web app. Stdlib only."""
 
 import argparse
+import csv
 import json
 import re
 import sys
@@ -16,6 +17,8 @@ WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 LANGUAGES = ("en", "fr", "es", "ca", "de", "it")
 MAX_PER_RUN = 4
 MAX_LOCAL = 3
+MAX_REACH_PER_RUN = 10
+REACH_COLUMNS = ("domain", "search", "reach", "note")
 MAX_EVERY = 12
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,59}$")
 
@@ -95,9 +98,7 @@ def dump_sources(outlets: dict[str, dict]) -> str:
 
 
 def set_outlet(root: Path, domain: str, **changes) -> Path:
-    domain = domain.lower().removeprefix("www.")
-    if not DOMAIN_RE.match(domain):
-        raise ValueError(f"bad domain: {domain!r}")
+    domain = clean_domain(domain)
     outlets = load_sources(root)
     info = outlets.setdefault(domain, {})
     for key, value in changes.items():
@@ -118,6 +119,100 @@ def write_reader(root: Path, read: list[str]) -> Path:
     path = root / "reader.toml"
     path.write_text(f"read = {json.dumps(langs)}\n", encoding="utf-8")
     return path
+
+
+def clean_domain(domain: str) -> str:
+    domain = domain.strip().lower().removeprefix("www.")
+    if not DOMAIN_RE.match(domain):
+        raise ValueError(f"bad domain: {domain!r}")
+    return domain
+
+
+def reach_queue(root: Path = ROOT) -> list[str]:
+    folder = root / "reach" / "queue"
+    if not folder.is_dir():
+        return []
+    return sorted(p.name for p in folder.iterdir() if p.is_file() and DOMAIN_RE.match(p.name))
+
+
+def queue_reach(root: Path, domain: str) -> Path:
+    path = root / "reach" / "queue" / clean_domain(domain)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.touch()
+    return path
+
+
+def reach_history(root: Path = ROOT) -> dict[str, list[tuple[date, str]]]:
+    history: dict[str, dict[date, str]] = {}
+    for path in sorted((root / "reach" / "history").glob("*.tsv")):
+        try:
+            day = date.fromisoformat(path.stem)
+        except ValueError:
+            continue
+        with path.open(encoding="utf-8", newline="") as f:
+            for row in csv.DictReader(f, delimiter="\t"):
+                if row.get("reach") in REACH and row.get("domain"):
+                    history.setdefault(row["domain"], {})[day] = row["reach"]
+    return {d: sorted(days.items()) for d, days in history.items()}
+
+
+def read_reach_rows(path: Path) -> list[dict]:
+    rows = []
+    with path.open(encoding="utf-8", newline="") as f:
+        for row in csv.DictReader(f, delimiter="\t"):
+            reach = (row.get("reach") or "").strip()
+            if reach not in REACH:
+                raise ValueError(f"bad reach for {row.get('domain')!r}: {reach!r}")
+            search = (row.get("search") or "").strip().lower()
+            rows.append(
+                {
+                    "domain": clean_domain(row.get("domain") or ""),
+                    "search": "y" if search.startswith("y") else "n",
+                    "reach": reach,
+                    "note": " ".join((row.get("note") or "").split())[:120],
+                }
+            )
+    return rows
+
+
+def record_reach(root: Path, day: date, rows: list[dict]) -> list[str]:
+    if not rows:
+        return []
+    history = root / "reach" / "history" / f"{day.isoformat()}.tsv"
+    history.parent.mkdir(parents=True, exist_ok=True)
+    new = not history.exists()
+    with history.open("a", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=REACH_COLUMNS, delimiter="\t", lineterminator="\n")
+        if new:
+            writer.writeheader()
+        writer.writerows(rows)
+    outlets = load_sources(root)
+    changed = [history]
+    for row in rows:
+        info = outlets.setdefault(row["domain"], {})
+        info["reach"] = row["reach"]
+        info["checked"] = day
+        queued = root / "reach" / "queue" / row["domain"]
+        if queued.exists():
+            queued.unlink()
+            changed.append(queued)
+    sources = root / "sources.toml"
+    sources.write_text(dump_sources(outlets), encoding="utf-8")
+    changed.append(sources)
+    return [str(p.relative_to(root)) for p in changed]
+
+
+def reach_plan(root: Path, everything: bool = False, limit: int = MAX_REACH_PER_RUN) -> dict:
+    outlets = load_sources(root)
+    queued = reach_queue(root)
+    domains = sorted(set(outlets) | set(queued)) if everything else queued[:limit]
+    return {
+        "check": [
+            {"domain": d, "languages": list(outlets.get(d, {}).get("languages", []))}
+            for d in domains
+        ],
+        "deferred": [] if everything else queued[limit:],
+    }
 
 
 def report_dates(root: Path, topic_id: str) -> list[date]:
@@ -325,6 +420,7 @@ def plan(root: Path, today: date, limit: int = MAX_PER_RUN) -> dict:
         "today": today.isoformat(),
         "read": load_reader(root)["read"],
         "max_local_languages": MAX_LOCAL,
+        "reach_queue": len(reach_queue(root)),
         "slots_assigned": assigned,
         "run": due[:limit],
         "deferred": [d["id"] for d in due[limit:]],
@@ -343,13 +439,24 @@ def main(argv: list[str] | None = None) -> int:
     p_plan.add_argument("--max", type=int, default=MAX_PER_RUN)
     p_done = sub.add_parser("done")
     p_done.add_argument("topic_id")
+    p_rplan = sub.add_parser("reach-plan")
+    p_rplan.add_argument("--all", action="store_true")
+    p_rec = sub.add_parser("reach-record")
+    p_rec.add_argument("results", type=Path)
+    p_rec.add_argument("--today", type=date.fromisoformat, default=None)
     args = parser.parse_args(argv)
     if args.cmd == "plan":
         result = plan(ROOT, args.today or today_local(), args.max)
-        json.dump(result, sys.stdout, indent=2, ensure_ascii=False)
-        print()
+    elif args.cmd == "reach-plan":
+        result = reach_plan(ROOT, args.all)
+    elif args.cmd == "reach-record":
+        changed = record_reach(ROOT, args.today or today_local(), read_reach_rows(args.results))
+        result = {"changed": changed}
     else:
         done(ROOT, args.topic_id)
+        return 0
+    json.dump(result, sys.stdout, indent=2, ensure_ascii=False, default=str)
+    print()
     return 0
 
 

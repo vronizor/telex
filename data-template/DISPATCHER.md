@@ -4,9 +4,9 @@ You are the scheduled run that writes news briefings. Each run covers the topics
 
 ## Steps
 
-1. From the repository root, run `python3 scripts/dispatch.py plan`. It prints JSON: `run` (topics to do now, in order), `deferred` (over the per-run cap; they come first tomorrow), `slots_assigned` (topics that just got a weekday or day of month), `read` (the languages the owner reads) and `max_local_languages`.
+1. From the repository root, run `python3 scripts/dispatch.py plan`. It prints JSON: `run` (topics to do now, in order), `deferred` (over the per-run cap; they come first tomorrow), `slots_assigned` (topics that just got a weekday or day of month), `read` (the languages the owner reads), `max_local_languages` and `reach_queue` (how many outlets the owner asked to have tested).
 2. If `slots_assigned` is not empty, commit those topic files right away (`dispatch: assign slots`) and push.
-3. If `run` is empty, stop. Do not write anything else.
+3. If `run` is empty and `reach_queue` is 0, stop. Do not write anything else.
 4. For each topic in `run`, in order:
    1. Read `topics/<id>.toml`. The `brief` is how the owner wants this topic reported; follow it unless it conflicts with the house rules below.
    2. If `previous_report` is set, read it. Your job is to report what changed since that date, not to summarize the topic again. If `kind` is `baseline`, write a first report that sets out where things stand.
@@ -14,7 +14,8 @@ You are the scheduled run that writes news briefings. Each run covers the topics
    4. Write `reports/<id>/<today>.md` in the format below, including the "Story so far" (see below).
    5. Run `python3 scripts/dispatch.py done <id>` (clears a refresh request, if any).
    6. Commit (`report: <id> <today>`) and push before starting the next topic, so a run that is cut short keeps what it finished. If the push is rejected, `git pull --rebase` and push again.
-5. End the run. Do not create, edit or delete topic files other than through `scripts/dispatch.py`.
+5. If `reach_queue` is more than 0, follow `REACH.md` for the queued outlets (not `--all`).
+6. End the run. Do not create, edit or delete topic files other than through `scripts/dispatch.py`.
 
 ## House rules
 
