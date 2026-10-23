@@ -94,13 +94,17 @@ def test_plan_assigns_orders_and_caps(root):
 
 def test_dump_round_trip(root):
     brief = "Line one with 'quotes' and \"doubles\".\nLine two: café, Barcelona — ok."
-    t = topic("rt", "weekly", 4, languages=["ca", "es"], brief=brief, title='A "title"')
+    t = topic(
+        "rt", "weekly", 4, extra_languages=["ca"], local=False, brief=brief, title='A "title"'
+    )
     path = d.write_topic(root, t)
     with path.open("rb") as f:
         data = tomllib.load(f)
     assert data["brief"] == brief
     assert data["title"] == 'A "title"'
-    assert data["languages"] == ["ca", "es"]
+    assert data["extra_languages"] == ["ca"]
+    assert data["local"] is False
+    assert "languages" not in data
     tricky = "has ''' inside\nand a newline"
     d.write_topic(root, topic("tr", "daily", brief=tricky))
     assert d.load_topics(root)[1]["brief"] == tricky
@@ -159,3 +163,18 @@ def test_write_keeps_until_and_every(root):
     )
     d.write_topic(root, topic("k", "weekly", 1, every=1))
     assert "every" not in d.load_topics(root)[0]
+
+
+def test_languages_migration_and_reader(root):
+    (root / "topics" / "old.toml").write_text(
+        'title = "Old"\ncadence = "daily"\nlanguages = ["fr", "en"]\nbrief = "b"\n'
+    )
+    t = d.load_topics(root)[0]
+    assert "languages" not in t and t["local"] is True and t["extra_languages"] == []
+    d.write_topic(root, t)
+    assert "languages" not in (root / "topics" / "old.toml").read_text()
+    assert d.plan(root, THU)["read"] == ["en"]
+    (root / "reader.toml").write_text('read = ["en", "fr", "ca"]\n')
+    result = d.plan(root, THU)
+    assert result["read"] == ["en", "fr", "ca"]
+    assert result["run"][0]["local"] is True

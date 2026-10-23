@@ -231,7 +231,8 @@ NEW_TOPIC = {
     "cadence": "weekly",
     "every": 1,
     "until": None,
-    "languages": ["en"],
+    "local": True,
+    "extra_languages": [],
     "active": True,
 }
 
@@ -286,7 +287,8 @@ def edit_topic(request: Request, topic_id: str):
         "cadence": t.cadence,
         "every": t.every,
         "until": t.until,
-        "languages": t.languages,
+        "local": t.local,
+        "extra_languages": t.extra_languages,
         "active": t.active,
     }
     return form_page(request, t, values)
@@ -308,14 +310,12 @@ def validate(values: dict) -> str | None:
     if not 1 <= values["every"] <= store.d.MAX_EVERY:
         unit = {"daily": "days", "weekly": "weeks", "monthly": "months"}[values["cadence"]]
         return f"Repeat every 1 to {store.d.MAX_EVERY} {unit}."
-    if not values["languages"]:
-        return "Pick at least one language to search in."
     return None
 
 
 async def read_form(request: Request) -> dict:
     form = await request.form()
-    langs = [lang for lang in form.getlist("languages") if lang in store.d.LANGUAGES]
+    extras = [lang for lang in form.getlist("extra_languages") if lang in store.d.LANGUAGES]
     try:
         every = int(form.get("every") or 1)
     except ValueError:
@@ -330,7 +330,8 @@ async def read_form(request: Request) -> dict:
         "brief": str(form.get("brief", "")).replace("\r\n", "\n").strip(),
         "cadence": str(form.get("cadence", "")),
         "every": every,
-        "languages": langs,
+        "local": form.get("local") is not None,
+        "extra_languages": extras,
         "active": form.get("active") is not None,
     }
     if "until" in form:

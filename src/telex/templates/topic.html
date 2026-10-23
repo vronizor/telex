@@ -20,7 +20,7 @@
     {% if report.since %} · Δ since {{ report.since.strftime("%d.%m") }}{% endif %}
     {% if report.status == "update" %} · {{ counts(report.counts) }}{% endif %}
     {% if report.sources %} · src {{ report.sources }}{% endif %}
-    · {{ topic.languages | join(",") }}
+    {% if report.searched %} · {{ report.searched | join(",") }}{% endif %}
   </p>
   {% if report.story_html %}
   <details class="story">
@@ -74,7 +74,7 @@
 {% endif %}
 
 <details class="brief">
-  <summary class="label">Brief · {{ topic.schedule }} · {{ topic.languages | join(", ") }}</summary>
+  <summary class="label">Brief · {{ topic.schedule }} · {{ topic.search_label }}</summary>
   <p>{{ topic.brief }}</p>
 </details>
 {% endblock %}

@@ -51,6 +51,7 @@ class Report:
     sources: int = 0
     body: str = ""
     story_html: str = ""
+    searched: list[str] = field(default_factory=list)
 
 
 def source_map(text: str) -> dict[str, str]:
@@ -146,6 +147,7 @@ def parse_report(path: Path, topic_id: str) -> Report:
         counts=counts,
         body=body,
         story_html=render_markdown(drop_heading(story), sources=all_sources) if story else "",
+        searched=[str(x) for x in meta.get("searched", []) if isinstance(x, str)],
     )
 
 
@@ -155,7 +157,8 @@ class Topic:
     title: str
     cadence: str
     slot: int | None
-    languages: list[str]
+    local: bool
+    extra_languages: list[str]
     active: bool
     brief: str
     schedule: str
@@ -165,6 +168,11 @@ class Topic:
     next_run: date | None
     every: int = 1
     until: date | None = None
+
+    @property
+    def search_label(self) -> str:
+        parts = (["local"] if self.local else []) + self.extra_languages
+        return " + ".join(parts) or "en only"
 
     @property
     def state(self) -> str:
@@ -220,7 +228,8 @@ class Store:
             title=raw["title"],
             cadence=raw["cadence"],
             slot=raw.get("slot"),
-            languages=list(raw.get("languages", [])),
+            local=bool(raw.get("local", True)),
+            extra_languages=list(raw.get("extra_languages", [])),
             active=active,
             brief=raw.get("brief", ""),
             schedule=d.describe_schedule(raw["cadence"], raw.get("slot"), d.every(raw))

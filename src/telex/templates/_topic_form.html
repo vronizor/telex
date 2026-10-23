@@ -30,10 +30,15 @@
   </label>
 
   <fieldset class="field">
-    <legend class="label">Search in</legend>
+    <legend class="label">Languages</legend>
+    <label class="check">
+      <input type="checkbox" name="local" {% if values.local %}checked{% endif %}>
+      <span>Search local languages — the places and every side involved</span>
+    </label>
+    <span class="label">Also search in</span>
     <div class="chips">
       {% for lang in languages %}
-      <label><input type="checkbox" name="languages" value="{{ lang }}" {% if lang in values.languages %}checked{% endif %}><span>{{ lang }}</span></label>
+      <label><input type="checkbox" name="extra_languages" value="{{ lang }}" {% if lang in values.extra_languages %}checked{% endif %}><span>{{ lang }}</span></label>
       {% endfor %}
     </div>
   </fieldset>

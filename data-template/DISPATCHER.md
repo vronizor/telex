@@ -4,13 +4,13 @@ You are the scheduled run that writes news briefings. Each run covers the topics
 
 ## Steps
 
-1. From the repository root, run `python3 scripts/dispatch.py plan`. It prints JSON: `run` (topics to do now, in order), `deferred` (over the per-run cap; they come first tomorrow) and `slots_assigned` (topics that just got a weekday or day of month).
+1. From the repository root, run `python3 scripts/dispatch.py plan`. It prints JSON: `run` (topics to do now, in order), `deferred` (over the per-run cap; they come first tomorrow), `slots_assigned` (topics that just got a weekday or day of month), `read` (the languages the owner reads) and `max_local_languages`.
 2. If `slots_assigned` is not empty, commit those topic files right away (`dispatch: assign slots`) and push.
 3. If `run` is empty, stop. Do not write anything else.
 4. For each topic in `run`, in order:
    1. Read `topics/<id>.toml`. The `brief` is how the owner wants this topic reported; follow it unless it conflicts with the house rules below.
    2. If `previous_report` is set, read it. Your job is to report what changed since that date, not to summarize the topic again. If `kind` is `baseline`, write a first report that sets out where things stand.
-   3. Research. Run separate searches in each language in `languages`, not only English, and prefer primary sources (official gazettes, court documents, statistics offices, the parties' own statements) over coverage of them. Fetch and read the pages you rely on; search snippets are not enough.
+   3. Research. Decide which languages to search (see "Languages" below), run separate searches in each, and prefer primary sources (official gazettes, court documents, statistics offices, the parties' own statements) over coverage of them. Fetch and read the pages you rely on; search snippets are not enough.
    4. Write `reports/<id>/<today>.md` in the format below, including the "Story so far" (see below).
    5. Run `python3 scripts/dispatch.py done <id>` (clears a refresh request, if any).
    6. Commit (`report: <id> <today>`) and push before starting the next topic, so a run that is cut short keeps what it finished. If the push is rejected, `git pull --rebase` and push again.
@@ -25,6 +25,16 @@ You are the scheduled run that writes news briefings. Each run covers the topics
 - No padding. If nothing material happened since the previous report, write a quiet report: two or three sentences saying so and what you checked. A quiet week is a valid result, not a failure.
 - Write in English unless the brief asks otherwise. Paraphrase sources; quote at most a few words, only when the exact wording matters.
 - Length, not counting the Story so far: an update stays under 400 words, a baseline under 700, a quiet report under 80.
+
+## Languages
+
+The report is written in English (unless the brief says otherwise), but the research is not limited to the owner's languages.
+
+- **Local languages.** If the topic's `local` is true, work out the languages of the places and of the main actors involved, and search in each of them. Actors means every side, not only the majority language: an Israeli election needs Hebrew and Arabic sources; a Catalan housing law needs Catalan and Spanish. Use at most `max_local_languages` local languages, chosen by how much close-to-the-ground reporting they carry.
+- **Extra languages.** Also search in every language in the topic's `extra_languages`.
+- **English.** Always run at least one English search as well.
+- **Readable corroboration.** For each key claim, try to cite at least one source in a language listed in `read`. If a key claim rests only on sources in other languages, keep it, and end the sentence with `(only in <code> sources)`, e.g. `(only in he sources)`.
+- Record every language you actually searched in the front matter as `searched`.
 
 ## Story so far
 
@@ -43,6 +53,7 @@ status = "update"            # update | quiet | baseline
 headline = "One line, plain, under 90 characters"
 since = 2026-10-15           # date of the previous report; omit for a baseline
 story_rebuilt = 2026-10-01   # date the Story so far was last rebuilt from the reports
+searched = ["ca", "es", "en"] # every language you searched in this run
 +++
 
 ## Story so far

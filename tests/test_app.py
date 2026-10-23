@@ -45,7 +45,8 @@ def test_create_topic_commits_and_pushes(client, remote):
             "title": "Réforme des retraites (CH)",
             "brief": "Primary sources.\nSeparate decided from proposed.",
             "cadence": "weekly",
-            "languages": ["fr", "de"],
+            "local": "on",
+            "extra_languages": ["de", "xx"],
         },
         follow_redirects=False,
     )
@@ -54,7 +55,8 @@ def test_create_topic_commits_and_pushes(client, remote):
     text = remote_file(remote, "topics/reforme-des-retraites-ch.toml")
     data = tomllib.loads(text)
     assert data["brief"] == "Primary sources.\nSeparate decided from proposed."
-    assert data["languages"] == ["fr", "de"]
+    assert data["local"] is True and data["extra_languages"] == ["de"]
+    assert "languages" not in data
     assert data["slot"] not in (2, 4)
     assert data["active"] is True
     again = client.post(
@@ -63,7 +65,7 @@ def test_create_topic_commits_and_pushes(client, remote):
             "title": "Réforme des retraites (CH)",
             "brief": "x",
             "cadence": "daily",
-            "languages": ["fr"],
+            "local": "on",
         },
         follow_redirects=False,
     )
@@ -71,13 +73,9 @@ def test_create_topic_commits_and_pushes(client, remote):
 
 
 def test_validation(client, remote):
-    r = client.post(
-        "/new", data={"title": "X", "brief": "", "cadence": "weekly", "languages": ["en"]}
-    )
+    r = client.post("/new", data={"title": "X", "brief": "", "cadence": "weekly"})
     assert r.status_code == 400
     assert "Say how this topic should be reported" in r.text
-    r = client.post("/new", data={"title": "X", "brief": "y", "cadence": "weekly"})
-    assert "at least one language" in r.text
     assert remote_file(remote, "topics/x.toml") is None
 
 
@@ -88,7 +86,7 @@ def test_edit_keeps_or_reassigns_slot(client, remote):
             "title": "Barcelona rent cap",
             "brief": "New brief",
             "cadence": "weekly",
-            "languages": ["ca"],
+            "local": "on",
             "active": "on",
         },
     )
@@ -101,7 +99,7 @@ def test_edit_keeps_or_reassigns_slot(client, remote):
             "title": "Barcelona rent cap",
             "brief": "New brief",
             "cadence": "monthly",
-            "languages": ["ca"],
+            "local": "on",
         },
     )
     data = tomllib.loads(remote_file(remote, "topics/bcn-rent-cap.toml"))
@@ -192,7 +190,7 @@ def test_edit_keeps_until(client, remote):
             "title": "EU chat control",
             "brief": "x",
             "cadence": "weekly",
-            "languages": ["en"],
+            "local": "on",
             "active": "on",
         },
     )
@@ -267,7 +265,7 @@ def test_every_n(client, remote):
             "brief": "x",
             "cadence": "weekly",
             "every": "2",
-            "languages": ["fr"],
+            "local": "on",
         },
         follow_redirects=False,
     )
@@ -278,7 +276,7 @@ def test_every_n(client, remote):
     assert "every 2 weeks on" in page
     bad = client.post(
         "/new",
-        data={"title": "Y", "brief": "x", "cadence": "daily", "every": "0", "languages": ["fr"]},
+        data={"title": "Y", "brief": "x", "cadence": "daily", "every": "0", "local": "on"},
     )
     assert bad.status_code == 400 and "Repeat every 1 to 12 days" in bad.text
 
@@ -305,7 +303,7 @@ def test_until_from_form(client, remote):
         "brief": "x",
         "cadence": "weekly",
         "every": "1",
-        "languages": ["en"],
+        "local": "on",
         "active": "on",
     }
     client.post("/t/eu-chat-control/edit", data={**base, "until": "2026-12-31"})
@@ -316,3 +314,22 @@ def test_until_from_form(client, remote):
     assert "until" not in _t.loads(_rf(remote, "topics/eu-chat-control.toml"))
     bad = client.post("/t/eu-chat-control/edit", data={**base, "until": "soon"})
     assert bad.status_code == 400
+
+
+def test_languages_on_topic_and_report(client, remote):
+    page = client.get("/t/bcn-rent-cap").text
+    assert "Brief · every Wed · local" in page
+    assert "· ca,es,en" in page
+    client.post(
+        "/t/bcn-rent-cap/edit",
+        data={
+            "title": "Barcelona rent cap",
+            "brief": "b",
+            "cadence": "weekly",
+            "extra_languages": ["fr"],
+            "active": "on",
+        },
+    )
+    data = tomllib.loads(remote_file(remote, "topics/bcn-rent-cap.toml"))
+    assert data["local"] is False and data["extra_languages"] == ["fr"]
+    assert "every Wed · fr" in client.get("/t/bcn-rent-cap").text

@@ -3,7 +3,8 @@
 Private data for the Telex app: topics, reports and the instructions for the daily dispatcher run.
 
 ```
-topics/<id>.toml           one file per topic (title, cadence, slot, languages, active, created, brief)
+topics/<id>.toml           one file per topic (title, cadence, slot, local, extra_languages, active, created, brief)
+reader.toml                the languages the owner reads: read = ["en", "fr"]
 reports/<id>/<date>.md     one report per run, TOML front matter between +++ lines
 queue/<id>                 an empty file means "refresh at the next run"
 scripts/dispatch.py        scheduling and file format, stdlib only; also imported by the web app

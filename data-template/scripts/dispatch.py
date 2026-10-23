@@ -15,6 +15,7 @@ CADENCES = ("daily", "weekly", "monthly")
 WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 LANGUAGES = ("en", "fr", "es", "ca", "de", "it")
 MAX_PER_RUN = 4
+MAX_LOCAL = 3
 MAX_EVERY = 12
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,59}$")
 
@@ -30,9 +31,18 @@ def load_topics(root: Path = ROOT) -> list[dict]:
             data = tomllib.load(f)
         data["id"] = path.stem
         data.setdefault("active", True)
-        data.setdefault("languages", ["en"])
+        data.setdefault("local", True)
+        data["extra_languages"] = list(data.get("extra_languages", []))
+        data.pop("languages", None)
         topics.append(data)
     return topics
+
+
+def load_reader(root: Path = ROOT) -> dict:
+    path = root / "reader.toml"
+    data = tomllib.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    data["read"] = list(data.get("read") or ["en"])
+    return data
 
 
 def report_dates(root: Path, topic_id: str) -> list[date]:
@@ -174,10 +184,12 @@ def dump_topic(topic: dict) -> str:
     if topic.get("slot") is not None:
         lines.append(f"slot = {int(topic['slot'])}")
     lines += [
-        f"languages = {json.dumps(list(topic.get('languages') or ['en']))}",
+        f"local = {'true' if topic.get('local', True) else 'false'}",
         f"active = {'true' if topic.get('active', True) else 'false'}",
         f"created = {topic.get('created') or today_local()}",
     ]
+    if topic.get("extra_languages"):
+        lines.append(f"extra_languages = {json.dumps(list(topic['extra_languages']))}")
     if every(topic) > 1:
         lines.append(f"every = {every(topic)}")
     if isinstance(topic.get("until"), date):
@@ -225,7 +237,8 @@ def plan(root: Path, today: date, limit: int = MAX_PER_RUN) -> dict:
             {
                 "id": t["id"],
                 "title": t["title"],
-                "languages": t["languages"],
+                "local": t["local"],
+                "extra_languages": t["extra_languages"],
                 "queued": is_queued(root, t["id"]),
                 "previous_report": f"reports/{t['id']}/{dates[-1]}.md" if dates else None,
                 "kind": "update" if dates else "baseline",
@@ -235,6 +248,8 @@ def plan(root: Path, today: date, limit: int = MAX_PER_RUN) -> dict:
     due.sort(key=lambda d: d.pop("_order"))
     return {
         "today": today.isoformat(),
+        "read": load_reader(root)["read"],
+        "max_local_languages": MAX_LOCAL,
         "slots_assigned": assigned,
         "run": due[:limit],
         "deferred": [d["id"] for d in due[limit:]],
