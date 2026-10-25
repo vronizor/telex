@@ -1,0 +1,33 @@
+{% macro clock(seconds) -%}
+{%- set s = seconds | int -%}{{ s // 60 }}:{{ "%02d" | format(s % 60) }}
+{%- endmacro %}
+
+{% macro icon(name) -%}
+<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
+{%- if name == "play" %}<path d="M7 4.5v15l13-7.5z" fill="currentColor"/>
+{%- elif name == "pause" %}<path d="M6.5 4.5h4v15h-4zm7 0h4v15h-4z" fill="currentColor"/>
+{%- elif name == "prev" %}<path d="M6 5h2.5v14H6zm3.5 7L19 5.5v13z" fill="currentColor"/>
+{%- elif name == "next" %}<path d="M15.5 5H18v14h-2.5zM5 5.5l9.5 6.5L5 18.5z" fill="currentColor"/>
+{%- endif -%}
+</svg>
+{%- endmacro %}
+
+{% macro player(show, chapters, compact=false) -%}
+<div class="player{% if compact %} player-compact{% endif %}" data-player data-day="{{ show.day }}"
+  data-album="Telex Radio · {{ show.day.strftime('%a %d %b') }}" data-chapters="{{ chapters | tojson | forceescape }}">
+  <audio preload="metadata" src="/radio/{{ show.day }}.mp3?v={{ show.digest }}"></audio>
+  <div class="player-row">
+    <button class="player-btn" type="button" data-prev aria-label="Previous topic">{{ icon("prev") }}</button>
+    <button class="player-btn player-play" type="button" data-play aria-label="Play">
+      <span data-icon-play>{{ icon("play") }}</span><span data-icon-pause hidden>{{ icon("pause") }}</span>
+    </button>
+    <button class="player-btn" type="button" data-next aria-label="Next topic">{{ icon("next") }}</button>
+    <div class="player-now">
+      <span class="player-chapter" data-now>{{ chapters[0].title if chapters else "" }}</span>
+      <span class="label muted"><span data-pos>0:00</span> / {{ clock(show.duration) }}</span>
+    </div>
+    <button class="btn btn-ghost label player-rate" type="button" data-rate aria-label="Playback speed">1×</button>
+  </div>
+  <input class="player-seek" type="range" data-seek min="0" max="{{ show.duration | int }}" step="1" value="0" aria-label="Position in the show">
+</div>
+{%- endmacro %}

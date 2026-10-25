@@ -26,6 +26,7 @@ class Settings:
     base_url: str = ""
     edition_weekday: int = 5
     edition_time: time = time(8, 0)
+    radio_keep_days: int = 14
 
     @property
     def checkout(self) -> Path:
@@ -52,4 +53,5 @@ def get_settings() -> Settings:
         base_url=env("TELEX_BASE_URL", "").rstrip("/"),
         edition_weekday=WEEKDAYS.index(env("TELEX_EDITION_DAY", "sat").lower()[:3]),
         edition_time=time.fromisoformat(env("TELEX_EDITION_TIME", "08:00")),
+        radio_keep_days=int(env("TELEX_RADIO_KEEP_DAYS", "14")),
     )

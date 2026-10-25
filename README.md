@@ -26,6 +26,10 @@ Every week (`TELEX_EDITION_DAY` at `TELEX_EDITION_TIME`, default Saturday 08:00)
 
 Build one by hand with `docker compose exec app python -m telex.edition [--date YYYY-MM-DD]`. To list it inside inkbook-digest's catalog, set `EXTRA_CATALOGS=Telex Weekly|<TELEX_BASE_URL>/opds/` there; or add the URL as a second catalog on the e-reader.
 
+## Morning radio
+
+After the reports, the dispatcher writes `shows/<date>.md`, a spoken script of the day's reports (format and rules in `DISPATCHER.md`, checked by `dispatch.py check-show`). A second container, `tts`, records it on the Pi with Kokoro into `$TELEX_HOST_DATA_DIR/audio/` (not in git, kept 14 days), and the app plays it from the home page and `/radio`, with chapters per topic and lock-screen controls. A show takes about as long to record as to play. Design and operation: `docs/radio.md`.
+
 ## Set up
 
 1. Create two GitHub repositories: `telex` (this code) and `telex-data` (**private**).
@@ -46,7 +50,7 @@ Build one by hand with `docker compose exec app python -m telex.edition [--date 
 
 ## Deploy updates
 
-`git pull && docker compose up -d --build` on the Pi. Changes to `data-template/` do not reach the data repo by themselves: copy `DISPATCHER.md` or `scripts/dispatch.py` over and commit there.
+`git pull && docker compose up -d --build` on the Pi. This builds both containers; the `tts` image is large (about 1 GB with the Kokoro model and spaCy) and its first build takes a while. Changes to `data-template/` do not reach the data repo by themselves: copy `DISPATCHER.md` or `scripts/dispatch.py` over and commit there.
 
 ## Develop
 

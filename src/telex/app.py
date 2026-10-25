@@ -2,7 +2,7 @@ import asyncio
 import hashlib
 import logging
 from contextlib import asynccontextmanager, suppress
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from urllib.parse import quote, urlsplit
 
@@ -20,6 +20,7 @@ from fastapi.templating import Jinja2Templates
 from telex import edition
 from telex.config import get_settings
 from telex.gitrepo import GitError, Repo
+from telex.radio import library as radio
 from telex.store import Store, Topic, chat_prompt, full_text, pointer_prompt, report_path
 
 HERE = Path(__file__).parent
@@ -30,6 +31,7 @@ templates.env.globals["static_version"] = hashlib.sha256(
 ).hexdigest()[:10]
 SEEN_COOKIE = "telex_seen"
 SEEN_GRACE = timedelta(hours=1)
+DISPATCH_PULLS = (15, 25, 40, 60)
 ORDER = {"update": 0, "baseline": 1, "pending": 2, "quiet": 3, "paused": 4}
 log = logging.getLogger("telex")
 
@@ -68,9 +70,18 @@ def pull_and_build() -> None:
     refresh_edition()
 
 
+def sync_delay(now: datetime, dispatch_time: time, minutes: int) -> float:
+    candidates = [now + timedelta(minutes=minutes)]
+    for day in (now.date(), now.date() + timedelta(days=1)):
+        start = datetime.combine(day, dispatch_time, now.tzinfo)
+        candidates += [start + timedelta(minutes=m) for m in DISPATCH_PULLS]
+    return (min(c for c in candidates if c > now) - now).total_seconds()
+
+
 async def sync_loop() -> None:
     while True:
-        await asyncio.sleep(settings.sync_minutes * 60)
+        delay = sync_delay(store.now(), settings.dispatch_time, settings.sync_minutes)
+        await asyncio.sleep(delay)
         await asyncio.to_thread(pull_and_build)
 
 
@@ -156,6 +167,7 @@ def index(request: Request):
         {t.slot for t in topics if t.active and t.cadence == "monthly" and t.slot}
     )
     last_report = max((t.latest.day for t in topics if t.latest), default=None)
+    show = home_show(now.date())
     response = render(
         request,
         "index.html",
@@ -172,6 +184,8 @@ def index(request: Request):
         last_report=last_report,
         next_dispatch=store.next_dispatch(now),
         latest_edition=next(iter(edition.list_editions(settings, limit=1)), None),
+        show=show,
+        chapters=chapter_links(show) if show else [],
         next_edition=edition.edition_day_for(now, settings) + timedelta(days=7),
         **form_context(None, NEW_TOPIC),
     )
@@ -495,6 +509,81 @@ def sync(back: str = Form("/")):
     pull_and_build()
     target = back if back.startswith("/") and not back.startswith("//") else "/"
     return RedirectResponse(target, status_code=303)
+
+
+def radio_shows(today: date) -> list[radio.Show]:
+    return radio.recent_shows(settings.checkout, settings.data_dir, today, settings.radio_keep_days)
+
+
+def home_show(today: date) -> radio.Show | None:
+    shows = [s for s in radio_shows(today) if s.day >= today - timedelta(days=1)]
+    return shows[0] if shows else None
+
+
+def chapter_links(show: radio.Show) -> list[dict]:
+    return [
+        {
+            "start": c.start,
+            "title": c.title,
+            "kind": c.kind,
+            "links": [
+                {"title": t.get("title") or t["id"], "href": f"/t/{t['id']}/r/{show.day}"}
+                for t in c.topics
+            ],
+        }
+        for c in show.chapters
+    ]
+
+
+def show_script(day: date) -> list[dict]:
+    path = radio.shows_dir(settings.checkout) / f"{day}.md"
+    if not path.exists():
+        return []
+    try:
+        segments = store.d.load_show(path)["segments"]
+    except (ValueError, AttributeError):
+        return []
+    titles = {t.id: t.title for t in store.topics()}
+    for seg in segments:
+        names = [titles.get(t, t) for t in seg["topics"]]
+        seg["title"] = {"intro": "Intro", "outro": "Outro"}.get(seg["kind"]) or (
+            ("Quiet: " if seg["kind"] == "quiet" else "") + ", ".join(names)
+        )
+    return segments
+
+
+def radio_page(request: Request, day: date | None):
+    today = store.now().date()
+    shows = radio_shows(today)
+    show = next((s for s in shows if s.day == day), None) if day else next(iter(shows), None)
+    if day and show is None:
+        raise HTTPException(404, "No show for that day")
+    return render(
+        request,
+        "radio.html",
+        show=show,
+        shows=shows,
+        chapters=chapter_links(show) if show else [],
+        script=show_script(show.day) if show else [],
+    )
+
+
+@app.get("/radio", response_class=HTMLResponse)
+def radio_latest(request: Request):
+    return radio_page(request, None)
+
+
+@app.get("/radio/{day}.mp3")
+def radio_audio(day: date):
+    path = radio.audio_dir(settings.data_dir) / f"{day.isoformat()}.mp3"
+    if not path.exists():
+        raise HTTPException(404, "No audio for that day")
+    return FileResponse(path, media_type="audio/mpeg")
+
+
+@app.get("/radio/{day}", response_class=HTMLResponse)
+def radio_day(request: Request, day: date):
+    return radio_page(request, day)
 
 
 def public_base(request: Request) -> str:

@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% from "_radio.html" import player, clock %}
+{% block title %}Telex Radio{% if show %} · {{ show.day.strftime("%a %d %b") }}{% endif %}{% endblock %}
+{% block content %}
+<a class="back label" href="/">← Telex</a>
+<p class="topic-meta label">Radio</p>
+
+{% if not show %}
+<h1 class="headline">No show yet</h1>
+<p class="notice">The dispatcher writes a show after each run that produces reports; it is recorded here a few minutes later.</p>
+{% else %}
+<h1 class="headline">{{ show.day.strftime("%A %d %B") }}</h1>
+<p class="report-meta label">
+  {% if show.state == "ready" %}{{ show.minutes }} min · {{ show.topic_chapters | length }} {{ "segment" if show.topic_chapters | length == 1 else "segments" }}
+  {% elif show.state == "recording" %}Recording…
+  {% else %}<span class="is-error">Not recorded</span>{% endif %}
+</p>
+
+{% if show.state == "recording" %}
+<p class="notice">The script is in; the Pi is recording it. A show takes about as long to record as to play.</p>
+{% elif show.state == "failed" %}
+<details class="notice contested">
+  <summary>The Pi could not record this script.</summary>
+  <pre class="radio-error">{{ show.error }}</pre>
+</details>
+{% endif %}
+{% if show.stale %}<p class="notice">A newer version of this script is being recorded.</p>{% endif %}
+{% if show.problems %}
+<details class="notice contested">
+  <summary>The script failed {{ show.problems | length }} {{ "check" if show.problems | length == 1 else "checks" }}; it was recorded anyway.</summary>
+  <ul>{% for p in show.problems %}<li>{{ p }}</li>{% endfor %}</ul>
+</details>
+{% endif %}
+
+{% if show.state == "ready" %}
+{{ player(show, chapters) }}
+
+<h2 class="section-label label">── Running order</h2>
+<ol class="chapters">
+  {% for c in chapters %}
+  <li class="chapter" data-chapter="{{ loop.index0 }}">
+    <button class="chapter-seek" type="button" data-seek-to="{{ c.start }}">
+      <span class="label muted">{{ clock(c.start) }}</span>
+      <span>{{ c.title }}</span>
+    </button>
+    {% if c.links | length == 1 %}<a class="label chapter-link" href="{{ c.links[0].href }}">Report →</a>{% endif %}
+  </li>
+  {% endfor %}
+</ol>
+{% endif %}
+
+{% if script %}
+<details class="story radio-script">
+  <summary class="label">Script</summary>
+  <div class="report">
+    {% for seg in script %}
+    <h2>{{ seg.title }}</h2>
+    {% for p in seg.paragraphs %}<p>{{ p }}</p>{% endfor %}
+    {% endfor %}
+  </div>
+</details>
+{% endif %}
+{% endif %}
+
+{% if shows | length > 1 or (shows and not show) %}
+<h2 class="section-label label">── Recent shows</h2>
+<div class="history">
+  {% for s in shows %}
+  <a class="history-row{% if show and s.day == show.day %} is-current{% endif %}" href="/radio/{{ s.day }}" data-played-day="{{ s.day }}">
+    <span class="label">{{ s.day | short_date(today) }}</span>
+    <span class="history-headline">{{ s.day.strftime("%A %d %B") }}</span>
+    <span class="label muted" data-played>{% if s.state == "ready" %}{{ s.minutes }} min{% elif s.state == "recording" %}recording{% else %}failed{% endif %}</span>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

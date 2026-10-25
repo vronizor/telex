@@ -1,11 +1,25 @@
 {% extends "base.html" %}
 {% from "_macros.html" import item, sched, tag, DAYS %}
+{% from "_radio.html" import player %}
 {% block content %}
 <p class="statusline label">
   {{ today.strftime("%a %d.%m.%y") }} · {{ topics | length }} topics
   {% if last_report %}· last report {{ last_report | short_date(today) }}{% endif %}
   · next run {{ next_dispatch | short_date(today) }} {{ settings.dispatch_time.strftime("%H:%M") }}
 </p>
+
+{% if show %}
+<section class="radio-strip" aria-label="Telex Radio">
+  <a class="radio-head label" href="/radio/{{ show.day }}">
+    <span>Radio · {{ show.day | short_date(today) }}</span>
+    {% if show.state == "ready" %}<span class="muted">{{ show.minutes }} min · {{ show.topic_chapters | length }} {{ "segment" if show.topic_chapters | length == 1 else "segments" }}</span>
+    {% elif show.state == "recording" %}<span class="muted">recording…</span>
+    {% else %}<span class="is-error">not recorded</span>{% endif %}
+    <span class="push">Show →</span>
+  </a>
+  {% if show.state == "ready" %}{{ player(show, chapters, compact=true) }}{% endif %}
+</section>
+{% endif %}
 
 {% if not topics %}
 <p class="notice">No topics yet. Add the first one below.</p>

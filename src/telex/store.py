@@ -1,4 +1,3 @@
-import importlib.util
 import re
 import tomllib
 import unicodedata
@@ -12,6 +11,7 @@ from urllib.parse import urlsplit
 
 from markdown_it import MarkdownIt
 
+from telex.checkout import dispatch
 from telex.config import Settings
 
 MARKS = {"+": "add", "~": "revised", "!": "contested", "-": "removed"}
@@ -24,20 +24,6 @@ TAG_RE = re.compile(rf"\[({TAG})\]")
 SECTION_RE = re.compile(r"^##[ \t]+(.+?)[ \t]*$", re.MULTILINE)
 STORY = "story so far"
 _md = MarkdownIt("commonmark", {"html": False, "linkify": False}).enable("table")
-_dispatch_cache: dict[Path, tuple[float, ModuleType]] = {}
-
-
-def dispatch(root: Path) -> ModuleType:
-    path = root / "scripts" / "dispatch.py"
-    mtime = path.stat().st_mtime
-    cached = _dispatch_cache.get(path)
-    if cached and cached[0] == mtime:
-        return cached[1]
-    spec = importlib.util.spec_from_file_location("telex_dispatch", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    _dispatch_cache[path] = (mtime, module)
-    return module
 
 
 @dataclass

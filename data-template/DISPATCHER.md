@@ -14,8 +14,9 @@ You are the scheduled run that writes news briefings. Each run covers the topics
    4. Write `reports/<id>/<today>.md` in the format below, including the "Story so far" (see below).
    5. Run `python3 scripts/dispatch.py done <id>` (clears a refresh request, if any).
    6. Commit (`report: <id> <today>`) and push before starting the next topic, so a run that is cut short keeps what it finished. If the push is rejected, `git pull --rebase` and push again.
-5. If `reach_queue` is more than 0, follow `REACH.md` for the queued outlets (not `--all`).
-6. End the run. Do not create, edit or delete topic files other than through `scripts/dispatch.py`.
+5. If you wrote at least one report today, write the morning show (see "Morning show" below), run `python3 scripts/dispatch.py check-show`, fix every problem it prints and run it again until it passes. Then commit (`show: <today>`) and push.
+6. If `reach_queue` is more than 0, follow `REACH.md` for the queued outlets (not `--all`).
+7. End the run. Do not create, edit or delete topic files other than through `scripts/dispatch.py`.
 
 ## House rules
 
@@ -105,3 +106,64 @@ Two to four sentences on the current state, with tags.
 ```
 
 The `[+]`, `[~]`, `[!]` and `[-]` markers are required at the start of each "What changed" item; the web app counts and colors them. Each Sources line starts with its tag, then one Markdown link, then the language; the web app turns every tag in the report into a link to that source. One tag per document: two articles from the same outlet get two tags (`LVG`, `LVG2`). A quiet report has no "What changed" list. A baseline has no "What changed" either: its Story so far is followed by "Where it stands", "Watch next" and "Sources".
+
+## Morning show
+
+A text-to-speech engine on the owner's Pi reads `shows/<today>.md` aloud as a short radio show, which the owner plays on the phone, usually while doing something else. It covers every report dated today, in one file. Write it after the reports, from the reports only: no new research, no fact, number or interpretation that is not in today's reports.
+
+### Format
+
+```
++++
+date = 2026-10-25
++++
+
+## intro
+
+Good morning. This is Telex for Sunday, the twenty-fifth of October. Israel votes on Tuesday, and the American forecasts held steady.
+
+## israel-election-2026
+
+Spoken text for this topic, in short paragraphs.
+
+## us-midterms-2026
+
+Spoken text.
+
+## quiet: iran-hormuz, collserola-swine-fever
+
+Nothing material today on the Iran war, or on the Collserola closure.
+
+## outro
+
+That's Telex for today.
+```
+
+The `## ` lines are segment markers, not spoken: `intro`, then one segment per update or baseline, named by topic id, then one `quiet:` segment listing every quiet report's topic id (omit it if there are none), then `outro`. On a day when every report is quiet, the show is just the intro, the quiet line and the outro.
+
+### Shape
+
+- **Order** the topic segments by how much changed, biggest first.
+- **Each topic segment**: the headline in one sentence; then context; then the two or three changes that matter most (pick, don't read the whole "What changed" list); then one sentence on what to watch and when.
+- **Context depends on the gap.** If the report's `since` is three days or less before today, give one orienting sentence ("Israel votes on Tuesday, and neither bloc is near a majority"). For a baseline, or a gap of four days or more, give up to three sentences condensed from the Story so far.
+- **Length**: an update segment 150 to 250 words (at most 280), a baseline at most 350, the intro at most 60, the outro at most 40, the whole show at most 1400 words (about ten minutes).
+- **Tone**: plain and calm, for one listener. No teasers, no "stay tuned", no sign-off chatter, no jokes.
+
+### Writing for the ear
+
+- Short sentences, one idea each; none over 40 words.
+- No source tags, brackets, parentheses, Markdown, lists or links. Latin script only: transliterate names.
+- Write every number, date, amount, percentage and unit as words: "fifty-three to forty-seven", "the twenty-fourth of October", "a hundred and ten dollars a barrel", "seventy-nine percent", "two thousand twenty-six". Round figures whose precision does not matter to the listener ("about twenty-seven million ballots"); keep the precision the report treats as the point.
+- Dates relative to the show by weekday ("on Friday") within the past week, otherwise the date. Do not say "yesterday": the show may be played the next day.
+- Name sources the way people say them ("the Times of Israel", not "TOI"), in passing, where who says it matters: official claims, contested facts, key numbers. Not on every sentence.
+- Spell out an acronym on first use unless it is normally spoken as it is (US, UN, NATO).
+- Keep every label the report carries, in spoken form:
+  - decided, announced, proposed, speculated: say which;
+  - interpretation: "That's an interpretation:" or "One reading:";
+  - contested: "Reports disagree: the Generalitat says…, landlord groups say…";
+  - `(only in he sources)`: "only Hebrew-language outlets report this";
+  - `(no independent confirmation)`: "Iranian state media says so; nobody independent has confirmed it";
+  - `(headline only)`: "according to a headline we could not read in full";
+  - `(low-confidence source)`: "from a source we treat with caution".
+
+`check-show` rejects digits, symbols, brackets, Markdown, non-Latin letters, overlong sentences and segments, missing or misfiled topics. It cannot check the labels: that part is on you.

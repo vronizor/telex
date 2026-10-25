@@ -241,3 +241,138 @@ def test_reach_queue_record_history(root, tmp_path):
     bad.write_text("domain\tsearch\treach\tnote\nrts.ch\ty\tmaybe\t\n")
     with pytest.raises(ValueError):
         d.read_reach_rows(bad)
+
+
+def add_status(root, id, day, status):
+    folder = root / "reports" / id
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{day}.md").write_text(f'+++\nstatus = "{status}"\n+++\n')
+
+
+GOOD_SHOW = """+++
+date = 2026-10-25
++++
+
+## intro
+
+Good morning. This is Telex for Sunday, the twenty-fifth of October.
+
+## alpha
+
+The council voted on Friday to raise rents by four percent. That is decided, not proposed.
+
+Only Catalan-language outlets report the second vote; nobody has confirmed it yet.
+
+## quiet: beta, gamma
+
+Nothing material today on beta or gamma.
+
+## outro
+
+That's Telex for today.
+"""
+
+
+def write_show(root, text, day="2026-10-25"):
+    (root / "shows").mkdir(exist_ok=True)
+    path = root / "shows" / f"{day}.md"
+    path.write_text(text)
+    return path
+
+
+@pytest.fixture
+def show_root(root):
+    day = date(2026, 10, 25)
+    add_status(root, "alpha", day, "update")
+    add_status(root, "beta", day, "quiet")
+    add_status(root, "gamma", day, "quiet")
+    add_status(root, "delta", day - timedelta(days=1), "update")
+    return root
+
+
+def test_parse_show_segments():
+    show = d.parse_show(GOOD_SHOW)
+    assert show["date"] == date(2026, 10, 25)
+    assert [(s["kind"], s["topics"]) for s in show["segments"]] == [
+        ("intro", []),
+        ("topic", ["alpha"]),
+        ("quiet", ["beta", "gamma"]),
+        ("outro", []),
+    ]
+    assert len(show["segments"][1]["paragraphs"]) == 2
+
+
+def test_check_show_accepts_a_good_show(show_root):
+    result = d.check_show(show_root, write_show(show_root, GOOD_SHOW))
+    assert result["ok"], result["problems"]
+    assert result["words"] > 30
+
+
+def test_check_show_rejects_written_forms(show_root):
+    text = GOOD_SHOW.replace("four percent", "4% [LVG]").replace(
+        "That is decided", "(only in ca sources) — that costs $5/month. That is decided"
+    )
+    problems = d.check_show(show_root, write_show(show_root, text))["problems"]
+    assert len(problems) == 1
+    for token in ("4%", "[LVG]", "(only", "$5/month."):
+        assert token in problems[0]
+
+
+def test_check_show_rejects_other_scripts_and_markdown(show_root):
+    text = GOOD_SHOW.replace("Nothing material", "**Nothing** material in ליכוד").replace(
+        "That's Telex for today.", "- That's Telex for today."
+    )
+    problems = d.check_show(show_root, write_show(show_root, text))["problems"]
+    assert any("**Nothing**" in p and "ליכוד" in p for p in problems)
+    assert any("list or quote" in p for p in problems)
+
+
+def test_check_show_coverage(show_root):
+    text = GOOD_SHOW.replace("## quiet: beta, gamma", "## quiet: beta, alpha\n\nX.\n\n## delta")
+    problems = d.check_show(show_root, write_show(show_root, text))["problems"]
+    assert "'alpha' is not quiet (update): give it its own segment" in problems
+    assert "'alpha' appears more than once" in problems
+    assert "'delta' has no report dated 2026-10-25" in problems
+    assert "today's report 'gamma' is missing from the show" in problems
+
+
+def test_check_show_structure_and_lengths(show_root):
+    long_sentence = " ".join(["word"] * 45) + "."
+    text = GOOD_SHOW.replace("## intro", "## alpha2").replace(
+        "That is decided, not proposed.", long_sentence + " " + " ".join(["more."] * 240)
+    )
+    problems = d.check_show(show_root, write_show(show_root, text))["problems"]
+    assert "the show must open with exactly one '## intro'" in problems
+    assert any("45-word sentence" in p for p in problems)
+    assert any(p.startswith("[alpha] has") and "limit is 280" in p for p in problems)
+
+
+def test_check_show_date_and_preamble(show_root):
+    wrong_day = d.check_show(show_root, write_show(show_root, GOOD_SHOW, "2026-10-24"))
+    assert "front matter needs date = 2026-10-24" in wrong_day["problems"]
+    preamble = GOOD_SHOW.replace("## intro", "Hello.\n\n## intro")
+    result = d.check_show(show_root, write_show(show_root, preamble))
+    assert result["problems"] == ["text before the first '## ' segment heading"]
+    assert not d.check_show(show_root, show_root / "shows" / "2026-10-30.md")["ok"]
+
+
+def test_all_quiet_show(root):
+    day = date(2026, 10, 25)
+    add_status(root, "beta", day, "quiet")
+    text = """+++
+date = 2026-10-25
++++
+
+## intro
+
+Good morning. A short one today.
+
+## quiet: beta
+
+Nothing material on beta.
+
+## outro
+
+Back tomorrow.
+"""
+    assert d.check_show(root, write_show(root, text))["ok"]

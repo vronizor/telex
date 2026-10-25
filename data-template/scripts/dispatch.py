@@ -6,6 +6,7 @@ import json
 import re
 import sys
 import tomllib
+import unicodedata
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -431,6 +432,171 @@ def done(root: Path, topic_id: str) -> None:
     (root / "queue" / topic_id).unlink(missing_ok=True)
 
 
+SHOW_LIMITS = {"intro": 60, "outro": 40, "update": 280, "baseline": 350, "total": 1400}
+QUIET_WORDS = (10, 15)
+MAX_SENTENCE_WORDS = 40
+SPOKEN_PUNCTUATION = set(".,;:!?'\"’‘“”—–-… ")
+SENTENCE_SPLIT = re.compile(r"(?<=[.!?…])[\"”’]?\s+")
+
+
+class ShowError(ValueError):
+    pass
+
+
+def read_front_matter(text: str) -> tuple[dict, str]:
+    if not text.startswith("+++"):
+        return {}, text
+    try:
+        _, front, body = text.split("+++", 2)
+        return tomllib.loads(front), body
+    except (ValueError, tomllib.TOMLDecodeError) as exc:
+        raise ShowError(f"front matter: {exc}") from exc
+
+
+def report_status(root: Path, topic_id: str, day: date) -> str | None:
+    path = root / "reports" / topic_id / f"{day}.md"
+    if not path.exists():
+        return None
+    try:
+        meta, _ = read_front_matter(path.read_text(encoding="utf-8"))
+    except ShowError:
+        return "update"
+    return meta.get("status", "update")
+
+
+def reports_on(root: Path, day: date) -> dict[str, str]:
+    found = {}
+    for path in sorted((root / "reports").glob(f"*/{day}.md")):
+        found[path.parent.name] = report_status(root, path.parent.name, day)
+    return found
+
+
+def parse_segment_heading(heading: str) -> dict:
+    heading = heading.strip()
+    if heading in ("intro", "outro"):
+        return {"kind": heading, "topics": []}
+    if heading.startswith("quiet:"):
+        ids = [s.strip() for s in heading.removeprefix("quiet:").split(",") if s.strip()]
+        return {"kind": "quiet", "topics": ids}
+    return {"kind": "topic", "topics": [heading]}
+
+
+def parse_show(text: str) -> dict:
+    meta, body = read_front_matter(text)
+    segments, preamble = [], []
+    for line in body.splitlines():
+        if line.startswith("## "):
+            segments.append({**parse_segment_heading(line[3:]), "lines": []})
+        elif segments:
+            segments[-1]["lines"].append(line)
+        elif line.strip():
+            preamble.append(line)
+    if preamble:
+        raise ShowError("text before the first '## ' segment heading")
+    for seg in segments:
+        paragraphs = re.split(r"\n\s*\n", "\n".join(seg.pop("lines")).strip())
+        seg["paragraphs"] = [" ".join(p.split()) for p in paragraphs if p.strip()]
+    day = meta.get("date")
+    return {"date": day if isinstance(day, date) else None, "segments": segments}
+
+
+def load_show(path: Path) -> dict:
+    return parse_show(path.read_text(encoding="utf-8"))
+
+
+def words(text: str) -> int:
+    return len(text.split())
+
+
+def unspeakable(text: str) -> list[str]:
+    bad = []
+    for token in text.split():
+        for ch in token:
+            if ch in SPOKEN_PUNCTUATION:
+                continue
+            if ch.isalpha() and "LATIN" in unicodedata.name(ch, ""):
+                continue
+            bad.append(token)
+            break
+    return bad
+
+
+def check_show(root: Path, path: Path) -> dict:
+    problems: list[str] = []
+    try:
+        day = date.fromisoformat(path.stem)
+    except ValueError:
+        return {"ok": False, "problems": [f"file name must be shows/YYYY-MM-DD.md: {path.name}"]}
+    if not path.exists():
+        return {"ok": False, "problems": [f"no show at {path}"]}
+    try:
+        show = load_show(path)
+    except ShowError as exc:
+        return {"ok": False, "problems": [str(exc)]}
+    if show["date"] != day:
+        problems.append(f"front matter needs date = {day}")
+    segments = show["segments"]
+    kinds = [s["kind"] for s in segments]
+    if not kinds or kinds[0] != "intro" or kinds.count("intro") != 1:
+        problems.append("the show must open with exactly one '## intro'")
+    if not kinds or kinds[-1] != "outro" or kinds.count("outro") != 1:
+        problems.append("the show must end with exactly one '## outro'")
+    if kinds.count("quiet") > 1:
+        problems.append("put every quiet topic in a single '## quiet: a, b' segment")
+
+    expected = reports_on(root, day)
+    seen: list[str] = []
+    for seg in segments:
+        for topic_id in seg["topics"]:
+            status = expected.get(topic_id)
+            if status is None:
+                problems.append(f"'{topic_id}' has no report dated {day}")
+            elif seg["kind"] == "quiet" and status != "quiet":
+                problems.append(f"'{topic_id}' is not quiet ({status}): give it its own segment")
+            elif seg["kind"] == "topic" and status == "quiet":
+                problems.append(f"'{topic_id}' is quiet: move it into the quiet segment")
+            seen.append(topic_id)
+    for topic_id in sorted(set(expected) - set(seen)):
+        problems.append(f"today's report '{topic_id}' is missing from the show")
+    for topic_id in sorted({t for t in seen if seen.count(t) > 1}):
+        problems.append(f"'{topic_id}' appears more than once")
+
+    total = 0
+    for seg in segments:
+        label = ", ".join(seg["topics"]) or seg["kind"]
+        text = " ".join(seg["paragraphs"])
+        n = words(text)
+        total += n
+        if not n:
+            problems.append(f"[{label}] is empty")
+            continue
+        if seg["kind"] == "quiet":
+            limit = QUIET_WORDS[0] + QUIET_WORDS[1] * len(seg["topics"])
+        elif seg["kind"] == "topic":
+            status = expected.get(seg["topics"][0])
+            limit = SHOW_LIMITS["baseline" if status == "baseline" else "update"]
+        else:
+            limit = SHOW_LIMITS[seg["kind"]]
+        if n > limit:
+            problems.append(f"[{label}] has {n} words; the limit is {limit}")
+        bad = unspeakable(text)
+        if bad:
+            shown = ", ".join(dict.fromkeys(bad[:8]))
+            problems.append(f"[{label}] has characters that are not spoken words: {shown}")
+        for paragraph in seg["paragraphs"]:
+            if re.match(r"^([-*>•]|\d+[.)])\s", paragraph):
+                problems.append(f"[{label}] has a list or quote line; write prose")
+            for sentence in SENTENCE_SPLIT.split(paragraph):
+                if words(sentence) > MAX_SENTENCE_WORDS:
+                    problems.append(
+                        f"[{label}] has a {words(sentence)}-word sentence; split it: "
+                        f"{' '.join(sentence.split()[:8])}…"
+                    )
+    if total > SHOW_LIMITS["total"]:
+        problems.append(f"the show has {total} words; the limit is {SHOW_LIMITS['total']}")
+    return {"ok": not problems, "problems": problems, "words": total}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="dispatch")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -444,7 +610,14 @@ def main(argv: list[str] | None = None) -> int:
     p_rec = sub.add_parser("reach-record")
     p_rec.add_argument("results", type=Path)
     p_rec.add_argument("--today", type=date.fromisoformat, default=None)
+    p_show = sub.add_parser("check-show")
+    p_show.add_argument("file", type=Path, nargs="?")
     args = parser.parse_args(argv)
+    if args.cmd == "check-show":
+        result = check_show(ROOT, args.file or ROOT / "shows" / f"{today_local()}.md")
+        json.dump(result, sys.stdout, indent=2, ensure_ascii=False)
+        print()
+        return 0 if result["ok"] else 1
     if args.cmd == "plan":
         result = plan(ROOT, args.today or today_local(), args.max)
     elif args.cmd == "reach-plan":
