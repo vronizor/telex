@@ -1,8 +1,8 @@
 # Telex Wire (RSS feeds) — design draft
 
-Status: proposal, 26 Oct 2026. Nothing here is built yet.
+Status: proposal, 26 Oct 2026; decisions below. Nothing here is built yet.
 
-The Pi pulls outlets' RSS feeds a few times a day, keeps what matches each topic, and commits that to the data repo; the dispatcher reads it before it searches. The point is to make outlets the run cannot see or read (`reach` = `headline` or `none`: Le Monde, Libération, RTS, El País, La Vanguardia, Tagesschau, the BBC…) at least visible as headlines and summaries, and to give every outlet a fresher signal than the search index.
+The Pi pulls outlets' RSS feeds every hour, keeps what matches each topic, and commits that to the data repo once a day, just before the run; the dispatcher reads it before it searches. The point is to make outlets the run cannot see or read (`reach` = `headline` or `none`: Le Monde, Libération, RTS, El País, La Vanguardia, Tagesschau, the BBC…) at least visible as headlines and summaries, and to give every outlet a fresher signal than the search index.
 
 ## Why the Pi
 
@@ -11,10 +11,10 @@ The dispatcher runs in a cloud sandbox whose shell can only reach package regist
 ## How it works
 
 ```
-app on the Pi, at TELEX_FEED_TIMES ──▶ fetch feeds listed in sources.toml (conditional GET)
+app on the Pi, every hour ──▶ fetch feeds listed in sources.toml (conditional GET)
   ──▶ $DATA_DIR/wire/items/<date>.jsonl   every item, 45 days, local only
   ──▶ match against each topic's `watch` terms
-  ──▶ data repo: wire/<topic-id>.jsonl    matched items only ──commit_and_push──▶ GitHub
+  ──▶ data repo: wire/<topic-id>.jsonl    matched items only, committed at dispatch − 15 min
 dispatcher run ──▶ dispatch.py wire <id> ──▶ leads + feed summaries for the report
 ```
 
@@ -23,14 +23,16 @@ dispatcher run ──▶ dispatch.py wire <id> ──▶ leads + feed summaries 
 - **What an item keeps.** `id` (guid, else link), `domain`, `feed`, `published`, `seen` (first pull that saw it), `title`, `summary` (the feed's description, HTML stripped, cut at 600 characters), `url`, `lang` (from the outlet). Never `content:encoded` and never the article page (see "Out of scope").
 - **Local store.** `$DATA_DIR/wire/items/<date>.jsonl` holds every item, deduplicated by `(domain, id)`, kept 45 days; `$DATA_DIR/wire/state.json` keeps per feed the ETag, Last-Modified, the last ids seen, last success, last error and items per day. Not in git: a few dozen feeds produce on the order of a thousand items a day, which would bloat the repo's history for no benefit to the dispatcher.
 - **Matching.** Topics gain `watch = [...]`: terms in any language (names, places, local-language words for the issue). Case- and accent-insensitive, whole words; a term with spaces is a phrase; `a & b` requires both, for noisy words ("strike & rail"). An item matches a topic when its title or summary matches one term.
-- **What goes in git.** `wire/<topic-id>.jsonl`: the matched items, newest first, pruned to the topic's look-back (the time since its previous report, at least 7 days, at most 45) and capped at 200 items. Written through `Repo.commit_and_push` as `wire: <n> new items`, only when something changed, so at most three commits a day.
+- **What goes in git.** `wire/<topic-id>.jsonl`: the matched items, newest first, pruned to the topic's look-back (the time since its previous report, at least 7 days, at most 45) and capped at 200 items. Written through `Repo.commit_and_push` as `wire: <n> new items` once a day, 15 minutes before the dispatch time, and only when something changed: one commit a day at most, whatever the fetch rate.
 - **Who writes `watch`.** The dispatcher, after each report: it knows the vocabulary of the story, in every language it searched. A new command, `dispatch.py watch <id> term…`, replaces the list (topic files are only written through `dispatch.py`). The topic form gets one plain text field so the owner can edit it too. A new topic has no terms until its baseline run, and a baseline doesn't need the wire.
 
 ## Schedule
 
-`TELEX_FEED_TIMES`, default: `TELEX_DISPATCH_TIME` minus 30 min (06:15), then 13:00 and 20:00.
+Fetch every hour, at a minute offset so the run doesn't land on the hour; `TELEX_FEED_MINUTES` (default 60) sets the interval. Commit to the data repo once a day (see "What goes in git").
 
-Three pulls a day is enough for most feeds, but not for all. A feed only shows its last 20 to 50 items, and a busy front-page feed can roll over in a few hours, so items published between pulls can drop out before anyone sees them. The puller detects this: if none of the ids from the previous pull are still in the feed, there may be a gap, and it records one. The Sources page shows gaps per feed. The fix is a narrower section feed (international instead of everything), not more frequent pulls. Overnight is quiet, so the long 20:00 to 06:15 gap costs little.
+A feed only shows its last 20 to 50 items, and a busy front-page feed can roll over in a few hours, so items published between pulls can drop out before anyone sees them. Hourly closes that for every feed in the seed list. The cost is small: about 50 feeds × 24 = 1,200 requests a day, most answered `304 Not Modified` with no body. Polling well-behaved feeds hourly with conditional requests is what ordinary feed readers do.
+
+The puller still logs a warning when none of the ids from the previous fetch are left in a feed (a probable gap). It's a few lines of code, and the only way to know that hourly isn't enough for some feed. It goes to the container log and the checker's output, not to the Sources page.
 
 ## How the dispatcher uses it
 
@@ -45,15 +47,19 @@ A new step in research, before the searches: `python3 scripts/dispatch.py wire <
 
 ## Web app
 
-- **Sources page.** Per outlet: its feeds, with last success, items a day and gaps, and a field to add or remove a feed URL. A "Find feeds" button fetches the outlet's homepage once from the Pi and lists the feeds it advertises (`<link rel="alternate" type="application/rss+xml">`); this covers the outlets whose feed address is not in the seed list below.
+- **Sources page.** Per outlet: its feeds, with last success and items a day, and a field to add or remove a feed URL. A "Find feeds" button fetches the outlet's homepage once from the Pi and lists the feeds it advertises (`<link rel="alternate" type="application/rss+xml">`); this covers the outlets whose feed address is not in the seed list below.
 - **Checker.** `docker compose exec app python -m telex.feeds check` fetches every listed feed once and prints status, item count, newest item date and whether summaries are present. Run it after seeding and after adding feeds.
-- **Topic page (optional).** A collapsed "On the wire since <date>" list under the latest report: titles and links, nothing else. Useful when a story moves between runs.
+- **Topic page (open).** A collapsed "On the wire since <date>" list under the latest report: titles and links, nothing else. Useful when a story moves between runs.
 
-## Decisions to make
+## Decisions
 
-1. Are `(feed summary)` citations allowed (proposed), or is the wire leads-only? Leads-only is stricter, but it leaves the outlets the run can't read invisible in the report, which is most of what this is for.
-2. Topic-page list: yes or no?
-3. Default feeds per outlet: "latest/front page + international" (proposed), or front page only to keep noise down?
+Taken 26 Oct 2026:
+
+1. `(feed summary)` citations are allowed, under the rules above.
+2. Default feeds per outlet: front page (or "latest") plus international.
+3. Fetch hourly, commit daily.
+
+Open: the topic-page list. On each topic's page in the app, under the latest report, a folded list of the headlines that matched the topic since that report, read from the Pi's local store. Between two runs of a weekly topic, it shows that something is moving without waiting for the next report.
 
 ## Out of scope, and why
 
@@ -72,7 +78,7 @@ A new step in research, before the searches: `python3 scripts/dispatch.py wire <
 ## Build order
 
 1. `dispatch.py`: `feeds` on outlets, `watch` on topics, the `watch` and `wire` commands, `wire_items` in `plan`, tests.
-2. `telex/feeds.py`: fetch, parse, state, match, write; the `check` and `discover` commands; the loop and `TELEX_FEED_TIMES`; tests with fixture feeds (RSS 2.0, Atom, RDF, a malformed one).
+2. `telex/feeds.py`: fetch, parse, state, match, write; the `check` and `discover` commands; the hourly loop, the daily commit and `TELEX_FEED_MINUTES`; tests with fixture feeds (RSS 2.0, Atom, RDF, a malformed one).
 3. Seed `feeds` in `sources.toml` from the list below, run `check` on the Pi, drop what fails.
 4. `DISPATCHER.md`: the wire step, the `(feed summary)` label and its spoken form, writing `watch` after each report.
 5. Sources page: feed health, add/remove, "Find feeds". Then the optional topic-page list.
