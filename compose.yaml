@@ -26,5 +26,6 @@ services:
     env_file: .env
     environment:
       TELEX_DATA_DIR: /data
+      TZ: ${TELEX_TZ:-Europe/Madrid}
     volumes:
       - ${TELEX_HOST_DATA_DIR:-./data}:/data

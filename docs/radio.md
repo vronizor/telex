@@ -27,7 +27,7 @@ app ──▶ home-page player, /radio page
 1. One show file per day, at the end of the run, covering every report dated that day. No facts beyond the reports.
 2. Per topic: headline, context, the two or three changes that matter, what to watch. Context depends on the gap since the previous report: one sentence when it is three days or less, up to three sentences for a baseline or a longer gap. Topic segments are ordered by how much changed.
 3. Quiet topics share one line near the end. A day when every topic is quiet still gets a short show.
-4. The confidence labels of the reports (decided/announced/proposed, interpretation, contested, only in X sources, no independent confirmation, headline only, low-confidence source) must survive in spoken form. `check-show` cannot verify this.
+4. The confidence labels of the reports (decided/announced/proposed, interpretation, contested, only in X sources, no independent confirmation, headline only, low-confidence source) must survive in spoken form. `check-show` cannot verify this. After the first real show (26 Oct), two rules were added: keep what a figure counts (seats are not children), and keep the other side's response when the report gives one.
 5. Separate `tts` service sharing the data volume; the app image stays light.
 6. Extra pulls at 15, 25, 40 and 60 minutes after the dispatch time, so a show lands soon after it is committed.
 7. In-app player only (Android, home-screen web app). No podcast feed.

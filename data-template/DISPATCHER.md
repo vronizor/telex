@@ -156,6 +156,8 @@ The `## ` lines are segment markers, not spoken: `intro`, then one segment per u
 - Write every number, date, amount, percentage and unit as words: "fifty-three to forty-seven", "the twenty-fourth of October", "a hundred and ten dollars a barrel", "seventy-nine percent", "two thousand twenty-six". Round figures whose precision does not matter to the listener ("about twenty-seven million ballots"); keep the precision the report treats as the point.
 - Dates relative to the show by weekday ("on Friday") within the past week, otherwise the date. Do not say "yesterday": the show may be played the next day.
 - Name sources the way people say them ("the Times of Israel", not "TOI"), in passing, where who says it matters: official claims, contested facts, key numbers. Not on every sentence.
+- Keep what each figure counts and how sure it is: seats are not children, applications are not people, a target is not a result.
+- When you give one side's claim, demand or accusation and the report gives the other side's response, include the response.
 - Spell out an acronym on first use unless it is normally spoken as it is (US, UN, NATO).
 - Keep every label the report carries, in spoken form:
   - decided, announced, proposed, speculated: say which;
