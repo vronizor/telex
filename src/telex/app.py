@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import logging
+import threading
 from contextlib import asynccontextmanager, suppress
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
@@ -22,6 +23,8 @@ from telex.config import get_settings
 from telex.gitrepo import GitError, Repo
 from telex.radio import library as radio
 from telex.store import Store, Topic, chat_prompt, full_text, pointer_prompt, report_path
+from telex.wire import Wire, discover
+from telex.wire import next_run as wire_next_run
 
 HERE = Path(__file__).parent
 STATIC_DIR = HERE / "static"
@@ -56,6 +59,7 @@ templates.env.filters["short_date"] = short_date
 settings = get_settings()
 repo = Repo(settings.checkout, settings.repo_url, settings.git_name, settings.git_email)
 store = Store(settings)
+wire = Wire(settings.data_dir, store)
 
 
 def refresh_edition() -> None:
@@ -85,15 +89,35 @@ async def sync_loop() -> None:
         await asyncio.to_thread(pull_and_build)
 
 
+def wire_job(publish: bool) -> None:
+    try:
+        repo.pull()
+        wire.pull(store.now())
+        if publish:
+            wire.publish(repo)
+    except Exception:
+        log.exception("wire job failed")
+
+
+async def wire_loop() -> None:
+    while True:
+        when, publish = wire_next_run(store.now(), settings.dispatch_time, settings.feed_minutes)
+        await asyncio.sleep(max(0.0, (when - store.now()).total_seconds()))
+        await asyncio.to_thread(wire_job, publish)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await asyncio.to_thread(repo.ensure)
     await asyncio.to_thread(pull_and_build)
-    task = asyncio.create_task(sync_loop())
+    tasks = [asyncio.create_task(sync_loop())]
+    if settings.feed_minutes > 0:
+        tasks.append(asyncio.create_task(wire_loop()))
     yield
-    task.cancel()
-    with suppress(asyncio.CancelledError):
-        await task
+    for task in tasks:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
 
 
 app = FastAPI(title="Telex", lifespan=lifespan, docs_url=None, redoc_url=None)
@@ -207,6 +231,8 @@ def topic_view(request: Request, topic: Topic, report):
         )
         chat_url = "https://claude.ai/new?q=" + quote(prompt, safe="")
         copy_text = full_text(topic.title, report)
+    wire_since = topic.latest.day if topic.latest else None
+    wire_items, wire_total = wire.for_topic(topic.id, wire_since)
     return render(
         request,
         "topic.html",
@@ -215,6 +241,9 @@ def topic_view(request: Request, topic: Topic, report):
         history=history,
         chat_url=chat_url,
         copy_text=copy_text,
+        wire_items=wire_items,
+        wire_total=wire_total,
+        wire_since=wire_since,
     )
 
 
@@ -243,6 +272,7 @@ NEW_TOPIC = {
     "extra_languages": [],
     "active": True,
     "next": None,
+    "watch": [],
 }
 
 
@@ -322,6 +352,7 @@ def edit_topic(request: Request, topic_id: str):
         "extra_languages": t.extra_languages,
         "active": t.active,
         "next": None,
+        "watch": t.watch,
     }
     return form_page(request, t, values)
 
@@ -375,6 +406,7 @@ async def read_form(request: Request) -> dict:
         "local": form.get("local") is not None,
         "extra_languages": extras,
         "active": form.get("active") is not None,
+        "watch": store.d.clean_watch(str(form.get("watch", "")).splitlines()),
     }
     if "until" in form:
         values["until"] = until
@@ -400,6 +432,8 @@ def save(request: Request, topic: Topic | None, values: dict):
         repo.commit_and_push([path], f"topic: {verb} {values['id']}")
     except (GitError, ValueError) as exc:
         return form_page(request, topic, values, error=f"Could not save: {exc}")
+    if values.get("watch") != (previous or {}).get("watch", []):
+        threading.Thread(target=wire.rematch, args=(store.now().date(),), daemon=True).start()
     return RedirectResponse(f"/t/{values['id']}", status_code=303)
 
 
@@ -437,6 +471,7 @@ SOURCE_FILTERS = (
     ("prefer", "Preferred"),
     ("voice", "Voices"),
     ("unreadable", "Unreadable"),
+    ("feeds", "Feeds"),
     ("all", "All"),
 )
 TIER_ORDER = {"prefer": 0, None: 1, "avoid": 2}
@@ -456,8 +491,25 @@ def pct(x: float) -> str:
 templates.env.globals["pct"] = pct
 
 
+def feed_health(fs: dict, today: date) -> tuple[str, str]:
+    if not fs.get("checked"):
+        return "", "not fetched yet"
+    if fs.get("error"):
+        times = f" ×{fs['errors']}" if fs.get("errors", 0) > 1 else ""
+        return "is-error", f"failing{times}: {fs['error']}"
+    parts = []
+    if ok := fs.get("ok"):
+        when = datetime.fromisoformat(ok)
+        parts.append(f"ok {when:%H:%M}" if when.date() == today else f"ok {when:%d.%m}")
+    if counts := fs.get("new"):
+        parts.append(f"~{round(sum(counts.values()) / len(counts))}/day")
+    if (gap := fs.get("gap")) and datetime.fromisoformat(gap).date() > today - timedelta(days=7):
+        parts.append("gaps this week")
+    return "", " · ".join(parts)
+
+
 @app.get("/sources", response_class=HTMLResponse)
-def sources_page(request: Request, show: str = "cited"):
+def sources_page(request: Request, show: str = "cited", find: str | None = None):
     if show not in dict(SOURCE_FILTERS):
         show = "cited"
     outlets, shares = store.sources()
@@ -466,8 +518,18 @@ def sources_page(request: Request, show: str = "cited"):
         "prefer": lambda o: o.tier == "prefer",
         "voice": lambda o: o.role == "voice",
         "unreadable": lambda o: o.reach in ("headline", "none") or o.unreachable > 0,
+        "feeds": lambda o: bool(o.feeds),
         "all": lambda o: True,
     }[show]
+    today = store.now().date()
+    state = wire.state()
+    health = {url: feed_health(state.get(url, {}), today) for o in outlets for url in o.feeds}
+    found = found_error = None
+    if find:
+        try:
+            found = discover(store.d.clean_domain(find))
+        except ValueError as exc:
+            found_error = f"Could not read the homepage: {exc}"
     shown = sorted(filter(keep, outlets), key=lambda o: outlet_order(o, show))
     counts = {
         "listed": sum(o.listed for o in outlets),
@@ -487,6 +549,10 @@ def sources_page(request: Request, show: str = "cited"):
         languages=store.d.LANGUAGES,
         max_tests=store.d.MAX_REACH_PER_RUN,
         marks=REACH_MARKS,
+        health=health,
+        find=find,
+        found=found,
+        found_error=found_error,
     )
 
 
@@ -507,6 +573,27 @@ async def update_outlet(request: Request):
     except GitError as exc:
         raise HTTPException(502, f"Could not save: {exc}") from exc
     target = show if show in dict(SOURCE_FILTERS) else "cited"
+    return RedirectResponse(f"/sources?show={target}#o-{quote(domain)}", status_code=303)
+
+
+@app.post("/sources/feeds")
+async def update_feeds(request: Request):
+    form = await request.form()
+    domain = str(form.get("domain", ""))
+    url = str(form.get("url", "")).strip()
+    action = str(form.get("action", "add"))
+    show = str(form.get("show", "feeds"))
+    try:
+        if action == "remove":
+            path = store.set_feeds(domain, remove=[url])
+        else:
+            path = store.set_feeds(domain, add=[url])
+        repo.commit_and_push([path], f"sources: {domain} {action} feed")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except GitError as exc:
+        raise HTTPException(502, f"Could not save: {exc}") from exc
+    target = show if show in dict(SOURCE_FILTERS) else "feeds"
     return RedirectResponse(f"/sources?show={target}#o-{quote(domain)}", status_code=303)
 
 

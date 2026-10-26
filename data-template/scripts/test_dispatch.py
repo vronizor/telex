@@ -487,3 +487,106 @@ def test_end_date_bounds_the_next_report(root):
     t = topic("e", "weekly", every=3, until=date(2026, 11, 5))
     assert d.pick_anchor(root, [], t, TUE, date(2026, 10, 30)) <= date(2026, 11, 5)
     assert "end date" in d.anchor_error(t, date(2026, 11, 12), TUE)
+
+
+def test_watch_matcher_folds_case_accents_and_words():
+    match = d.watch_matcher(["Montjuïc", "tope de alquiler", "strike & rail", "fermeture*"])
+    assert match("MONTJUIC reobre parcialment") == ["Montjuïc"]
+    assert match("El tope  de alquiler llega") == ["tope de alquiler"]
+    assert match("Strikers rally") == []
+    assert match("Rail unions call a strike for Monday") == ["strike & rail"]
+    assert match("Strike talks resume") == []
+    assert match("Fermetures prolongées") == ["fermeture*"]
+    assert d.watch_matcher([])("anything") == []
+
+
+def test_clean_watch_dedupes_and_normalises():
+    terms = d.clean_watch(["  Rent   cap ", "rent cap", "a&b", "", "*", "x" * 81, 3])
+    assert terms == ["Rent cap", "a & b", "3"]
+    assert len(d.clean_watch([f"t{i}" for i in range(50)])) == d.MAX_WATCH
+
+
+def test_watch_round_trips_through_topic_files(root):
+    d.write_topic(root, topic("a", "weekly", 2, watch=["Généralitat", "loyer*"]))
+    assert d.load_topics(root)[0]["watch"] == ["Généralitat", "loyer*"]
+    d.write_topic(root, topic("a", "weekly", 2))
+    assert d.load_topics(root)[0]["watch"] == ["Généralitat", "loyer*"]
+    d.set_watch(root, "a", ["rent cap"])
+    assert d.load_topics(root)[0]["watch"] == ["rent cap"]
+    d.set_watch(root, "a", [])
+    assert "watch" not in (root / "topics" / "a.toml").read_text()
+    with pytest.raises(ValueError):
+        d.set_watch(root, "nope", ["x"])
+
+
+def test_feeds_on_outlets(root):
+    d.set_outlet(root, "lemonde.fr", tier="prefer")
+    d.set_feeds(root, "lemonde.fr", add=["https://www.lemonde.fr/rss/une.xml"])
+    d.set_feeds(root, "lemonde.fr", add=["https://www.lemonde.fr/rss/une.xml", "https://x.fr/a"])
+    info = d.load_sources(root)["lemonde.fr"]
+    assert info["feeds"] == ["https://www.lemonde.fr/rss/une.xml", "https://x.fr/a"]
+    assert info["tier"] == "prefer"
+    assert ("https://x.fr/a", "lemonde.fr") in d.all_feeds(root)
+    d.set_feeds(root, "lemonde.fr", remove=["https://x.fr/a", "https://www.lemonde.fr/rss/une.xml"])
+    assert "feeds" not in d.load_sources(root)["lemonde.fr"]
+    with pytest.raises(ValueError):
+        d.set_feeds(root, "lemonde.fr", add=["javascript:alert(1)"])
+    (root / "sources.toml").write_text(
+        '[outlets."a.ch"]\nfeeds = ["ftp://a.ch/x", "https://a.ch/rss"]\n'
+    )
+    assert d.load_sources(root)["a.ch"]["feeds"] == ["https://a.ch/rss"]
+
+
+def wire_item(day, title="t", domain="lemonde.fr"):
+    return {
+        "seen": f"{day}T07:00:00+02:00",
+        "published": f"{day}T06:00:00+02:00",
+        "domain": domain,
+        "title": title,
+        "summary": "s",
+        "url": f"https://{domain}/{title}",
+        "matched": ["x"],
+    }
+
+
+def test_wire_files_and_report(root):
+    d.write_topic(root, topic("a", "weekly", 2))
+    add_report(root, "a", date(2026, 10, 15))
+    items = [wire_item("2026-10-14", "old"), wire_item("2026-10-20", "new", "rts.ch")]
+    d.write_wire(root, "a", items + [wire_item("2026-10-21", "newer")])
+    (root / "wire" / "a.jsonl").open("a").write("not json\n")
+    (root / "sources.toml").write_text('[outlets."rts.ch"]\nreach = "headline"\ntier = "prefer"\n')
+    assert [i["title"] for i in d.read_wire(root, "a")] == ["newer", "new", "old"]
+    out = d.wire_report(root, "a", d.wire_since(root, "a"))
+    assert out["items"] == 2
+    assert [g["domain"] for g in out["outlets"]] == ["rts.ch", "lemonde.fr"]
+    assert out["outlets"][0]["reach"] == "headline"
+    assert d.wire_report(root, "a")["items"] == 3
+    plan = d.plan(root, date(2026, 10, 28))
+    assert plan["run"][0]["wire_items"] == 2
+    d.write_wire(root, "a", [])
+    assert not (root / "wire" / "a.jsonl").exists()
+    assert d.read_wire(root, "missing") == []
+
+
+def test_wire_start_clamps_look_back(root):
+    today = date(2026, 10, 26)
+    assert d.wire_start(root, "a", today) == date(2026, 10, 12)
+    add_report(root, "a", date(2026, 10, 24))
+    assert d.wire_start(root, "a", today) == date(2026, 10, 19)
+    add_report(root, "b", date(2026, 7, 1))
+    assert d.wire_start(root, "b", today) == date(2026, 9, 11)
+
+
+def test_watch_and_wire_commands(root, monkeypatch, capsys):
+    monkeypatch.setattr(d, "ROOT", root)
+    d.write_topic(root, topic("a", "weekly", 2))
+    assert d.main(["watch", "a", "rent cap", "Généralitat"]) == 0
+    assert '"Généralitat"' in capsys.readouterr().out
+    assert d.load_topics(root)[0]["watch"] == ["rent cap", "Généralitat"]
+    assert d.main(["watch", "a", "--clear"]) == 0
+    assert d.load_topics(root)[0]["watch"] == []
+    assert d.main(["watch", "nope"]) == 1
+    capsys.readouterr()
+    assert d.main(["wire", "a"]) == 0
+    assert '"items": 0' in capsys.readouterr().out

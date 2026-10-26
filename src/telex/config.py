@@ -27,6 +27,7 @@ class Settings:
     edition_weekday: int = 5
     edition_time: time = time(8, 0)
     radio_keep_days: int = 14
+    feed_minutes: int = 60
 
     @property
     def checkout(self) -> Path:
@@ -54,4 +55,5 @@ def get_settings() -> Settings:
         edition_weekday=WEEKDAYS.index(env("TELEX_EDITION_DAY", "sat").lower()[:3]),
         edition_time=time.fromisoformat(env("TELEX_EDITION_TIME", "08:00")),
         radio_keep_days=int(env("TELEX_RADIO_KEEP_DAYS", "14")),
+        feed_minutes=int(env("TELEX_FEED_MINUTES", "60")),
     )

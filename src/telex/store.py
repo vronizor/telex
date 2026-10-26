@@ -159,6 +159,7 @@ class Topic:
     next_run: date | None
     every: int = 1
     until: date | None = None
+    watch: list[str] = field(default_factory=list)
 
     @property
     def search_label(self) -> str:
@@ -208,6 +209,10 @@ class Outlet:
     @property
     def languages(self) -> list[str]:
         return list(self.info.get("languages", []))
+
+    @property
+    def feeds(self) -> list[str]:
+        return list(self.info.get("feeds", []))
 
 
 @dataclass
@@ -316,6 +321,7 @@ class Store:
             next_run=next_run,
             every=d.every(raw),
             until=until,
+            watch=list(raw.get("watch", [])),
         )
 
     def topics(self) -> list[Topic]:
@@ -418,6 +424,10 @@ class Store:
 
     def set_outlet(self, domain: str, **changes) -> str:
         return str(self.d.set_outlet(self.root, domain, **changes).relative_to(self.root))
+
+    def set_feeds(self, domain: str, add: list[str] = (), remove: list[str] = ()) -> str:
+        path = self.d.set_feeds(self.root, domain, add=add, remove=remove)
+        return str(path.relative_to(self.root))
 
     def queue_reach(self, domain: str) -> str:
         return str(self.d.queue_reach(self.root, domain).relative_to(self.root))

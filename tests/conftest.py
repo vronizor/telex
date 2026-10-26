@@ -104,6 +104,7 @@ def client(tmp_path, remote, monkeypatch):
     from telex.config import Settings
     from telex.gitrepo import Repo
     from telex.store import Store
+    from telex.wire import Wire
 
     base = app_module.settings
     settings = Settings(
@@ -119,7 +120,9 @@ def client(tmp_path, remote, monkeypatch):
     monkeypatch.setattr(
         app_module, "repo", Repo(settings.checkout, str(remote), "test", "test@example.org")
     )
-    monkeypatch.setattr(app_module, "store", Store(settings))
+    store = Store(settings)
+    monkeypatch.setattr(app_module, "store", store)
+    monkeypatch.setattr(app_module, "wire", Wire(settings.data_dir, store, sleep=lambda s: None))
     with TestClient(app_module.app, base_url="http://telex.test") as c:
         yield c
 

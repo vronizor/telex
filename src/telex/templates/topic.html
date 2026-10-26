@@ -61,6 +61,21 @@
   {% if topic.next_run %}Next run {{ topic.next_run | short_date(today) }} {{ settings.dispatch_time.strftime("%H:%M") }} · {{ topic.schedule }}{% else %}Paused{% endif %}
 </p>
 
+{% if wire_items %}
+<details class="wire">
+  <summary class="label">On the wire{% if wire_since %} since {{ wire_since | short_date(today) }}{% endif %} · {{ wire_total }}</summary>
+  <ul class="wire-list">
+    {% for i in wire_items %}
+    <li>
+      <a href="{{ i.url }}" target="_blank" rel="noopener">{{ i.title }}</a>
+      <span class="label muted">{{ i.domain }} · {{ i.seen[8:10] }}.{{ i.seen[5:7] }} {{ i.seen[11:16] }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% if wire_total > wire_items | length %}<p class="hint label">Showing the newest {{ wire_items | length }}.</p>{% endif %}
+</details>
+{% endif %}
+
 {% if history | length > 1 %}
 <section>
   <h2 class="section-label label">── History</h2>

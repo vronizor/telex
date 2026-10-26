@@ -8,7 +8,7 @@ A small self-hosted reader for news briefings that a scheduled Claude run writes
 ```
 
 - **This repo** holds the app and `data-template/`, the starting content of the data repo: `DISPATCHER.md` (what the scheduled run does, house rules, report format) and `scripts/dispatch.py` (scheduling, stdlib only).
-- **The data repo** (private) holds `topics/`, `reports/` and `queue/`. The app imports `scripts/dispatch.py` from its checkout, so the scheduler logic exists once.
+- **The data repo** (private) holds `topics/`, `reports/`, `queue/` and `wire/`. The app imports `scripts/dispatch.py` from its checkout, so the scheduler logic exists once.
 
 ## Scheduling
 
@@ -17,6 +17,10 @@ A small self-hosted reader for news briefings that a scheduled Claude run writes
 - A missed run is caught up the next day. A refresh adds a report without moving the rhythm; the next scheduled run is skipped only if it falls within half an interval of the refresh.
 - At most 4 topics per run (`MAX_PER_RUN`); refresh requests go first, then first reports, then the most overdue.
 - `python3 scripts/dispatch.py forecast` lists the coming runs; `rebalance` suggests moves that would make busy days lighter, and `rebalance --apply` makes them. Existing topics are never moved otherwise.
+
+## Wire (RSS feeds)
+
+The app fetches the RSS feeds listed per outlet in `sources.toml` every hour, keeps the items that match each topic's wire terms, shows them on the topic page, and commits them to the data repo's `wire/` once a day, 15 minutes before the dispatcher runs. The run reads them with `dispatch.py wire <id>`: as leads for outlets it can read, and as citable summaries (marked `(feed summary)`) for outlets it can't. Feeds are managed on the Sources page; `python -m telex.wire check` tests them all. Design, limits and a seed list of feeds: `docs/feeds.md`.
 
 ## Morning radio
 

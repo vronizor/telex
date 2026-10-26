@@ -49,6 +49,12 @@
     </div>
   </fieldset>
 
+  <label class="field">
+    <span class="label">Wire terms (optional, one per line)</span>
+    <textarea name="watch" rows="3" spellcheck="false" autocapitalize="off" placeholder="Generalitat&#10;rent cap&#10;strike & rail">{{ values.watch | join("\n") }}</textarea>
+    <span class="hint label">Matched against feed headlines in any language. Whole words; a & b needs both; word* matches the start. The run updates these after each report.</span>
+  </label>
+
   {% if topic %}
   <label class="check">
     <input type="checkbox" name="active" {% if values.active %}checked{% endif %}>

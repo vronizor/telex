@@ -423,3 +423,35 @@ h1, h2, p { margin: 0; }
 .chapter-link:hover { color: var(--add); }
 .radio-script { margin-top: 24px; }
 .radio-error { white-space: pre-wrap; font: 400 12px/1.4 var(--mono); margin: 8px 0 0; max-height: 240px; overflow: auto; }
+
+.wire { margin-top: 20px; border: 1px solid var(--line); border-radius: var(--radius); padding: 0 12px; }
+.wire summary { cursor: pointer; color: var(--muted); padding: 10px 0; min-height: 44px; display: flex; align-items: center; }
+.wire-list { list-style: none; margin: 0; padding: 0 0 8px; }
+.wire-list li { padding: 8px 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
+.wire-list a { color: var(--ink); text-decoration: none; font-size: 15px; line-height: 1.35; }
+.wire-list a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.wire-list .label { font-size: 11px; }
+
+.feed-list { list-style: none; margin: 10px 0 0; padding: 0; }
+.feed-list li { display: flex; flex-direction: column; padding: 6px 0 0; border-top: 1px solid var(--line); }
+.feed-list li:first-child { border-top: 0; }
+.feed-url { font: 400 12px/1.4 var(--mono); color: var(--ink); overflow-wrap: anywhere; }
+.feed-meta { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.feed-health { flex: 1; min-width: 0; font-size: 11px; overflow-wrap: anywhere; }
+.feed-list .btn-link { min-height: 32px; font-size: 11px; }
+.feed-found { margin-top: 10px; padding: 8px 10px; background: var(--surface); border-radius: var(--radius); font-size: 13px; }
+.feed-found p { margin: 0; }
+.feed-add { margin-top: 10px; }
+.feed-add input[type="text"] {
+  min-height: 40px;
+  padding: 0 10px;
+  font: 400 13px/1 var(--mono);
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+.feed-add .btn { min-height: 40px; }
+.src-links { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 6px; }
+.src-links .src-test { margin-top: 0; }
+.src-links > .btn-link { display: inline-flex; align-items: center; min-height: 36px; font-size: 11px; }

@@ -4,16 +4,18 @@ You are the scheduled run that writes news briefings. Each run covers the topics
 
 ## Steps
 
-1. From the repository root, run `python3 scripts/dispatch.py plan`. It prints JSON: `run` (topics to do now, in order), `deferred` (over the per-run cap; they come first tomorrow), `slots_assigned` (topics that just got a schedule), `read` (the languages the owner reads), `max_local_languages` and `reach_queue` (how many outlets the owner asked to have tested).
+1. From the repository root, run `python3 scripts/dispatch.py plan`. It prints JSON: `run` (topics to do now, in order), `deferred` (over the per-run cap; they come first tomorrow), `slots_assigned` (topics that just got a schedule), `read` (the languages the owner reads), `max_local_languages` and `reach_queue` (how many outlets the owner asked to have tested). Each topic in `run` also has `wire_items`: how many feed items matched it since its previous report (see "Wire").
 2. If `slots_assigned` is not empty, commit those topic files right away (`dispatch: assign slots`) and push.
 3. If `run` is empty and `reach_queue` is 0, stop. Do not write anything else.
 4. For each topic in `run`, in order:
    1. Read `topics/<id>.toml`. The `brief` is how the owner wants this topic reported; follow it unless it conflicts with the house rules below.
    2. If `previous_report` is set, read it. Your job is to report what changed since that date, not to summarize the topic again. If `kind` is `baseline`, write a first report that sets out where things stand.
-   3. Research. Decide which languages to search (see "Languages" below), run separate searches in each, and prefer primary sources (official gazettes, court documents, statistics offices, the parties' own statements) over coverage of them. Fetch and read the pages you rely on; search snippets are not enough.
-   4. Write `reports/<id>/<today>.md` in the format below, including the "Story so far" (see below).
-   5. Run `python3 scripts/dispatch.py done <id>` (clears a refresh request, if any).
-   6. Commit (`report: <id> <today>`) and push before starting the next topic, so a run that is cut short keeps what it finished. If the push is rejected, `git pull --rebase` and push again.
+   3. Read the wire: `python3 scripts/dispatch.py wire <id>` (see "Wire").
+   4. Research. Decide which languages to search (see "Languages" below), run separate searches in each, and prefer primary sources (official gazettes, court documents, statistics offices, the parties' own statements) over coverage of them. Fetch and read the pages you rely on; search snippets are not enough.
+   5. Write `reports/<id>/<today>.md` in the format below, including the "Story so far" (see below).
+   6. Update the topic's wire terms with `python3 scripts/dispatch.py watch <id> <term>…` (see "Wire").
+   7. Run `python3 scripts/dispatch.py done <id>` (clears a refresh request, if any).
+   8. Commit the report and the topic file (`report: <id> <today>`) and push before starting the next topic, so a run that is cut short keeps what it finished. If the push is rejected, `git pull --rebase` and push again.
 5. If you wrote at least one report today, write the morning show (see "Morning show" below), run `python3 scripts/dispatch.py check-show`, fix every problem it prints and run it again until it passes. Then commit (`show: <today>`) and push.
 6. If `reach_queue` is more than 0, follow `REACH.md` for the queued outlets (not `--all`).
 7. End the run. Do not create, edit or delete topic files other than through `scripts/dispatch.py`.
@@ -55,7 +57,18 @@ Rules:
 - **Read what you cite.** Only cite pages you fetched and read. If a development matters but you could only see its headline, you may mention it once, cited, and end the sentence with `(headline only)`.
 - **Background is not a source.** Encyclopedias (Wikipedia, Britannica), news aggregators and market-data pages are for your own background; never cite them for news claims.
 - **Unreachable.** List in the front matter, as `unreachable`, the domains you tried to open in this run and could not (refused, blocked, paywalled). Omit it if there were none.
+- **Feed summaries.** See "Wire".
 - **Contested.** When reporter sources disagree on a key fact, set `contested` in the front matter to one line saying what is disputed and between whom. Only for factual disagreements, not differences of framing or emphasis. Omit it otherwise.
+
+## Wire
+
+The owner's Raspberry Pi reads the outlets' RSS feeds every hour and, just before this run, commits the items that match each topic's `watch` terms to `wire/<id>.jsonl`. `dispatch.py wire <id>` prints the items since the previous report, grouped by outlet, with each outlet's `role`, `tier` and `reach`. A feed item has a title, the outlet's own summary (often the standfirst, sometimes nothing), a link and the time the Pi saw it.
+
+- **Leads.** For an outlet whose `reach` is `full` or `partial` (or not listed), an item is a page to fetch and read, like a search result. Cite the page, not the feed.
+- **Feed summaries.** For an outlet whose `reach` is `headline` or `none`, you cannot open the page; the title and summary are all you get. You may cite them, using the item's link in the Sources list, and end the sentence with `(feed summary)`. Never make a feed summary the only basis for a key claim or a number; look for a source you can read, and if there is none, say what the outlet reports and keep the label.
+- **Corroboration.** Several outlets carrying the same story is a reason to look harder, not proof.
+- **Not a quiet signal.** An empty wire means the terms matched nothing, not that nothing happened. A quiet report still needs the searches.
+- **Terms.** After writing the report, update the topic's `watch` terms: `dispatch.py watch <id>` prints the current list, `dispatch.py watch <id> <term>…` replaces it. Start from the current list and refine it; the owner may have added terms by hand, so keep those unless they plainly bring noise, and don't drop a term only because it matched nothing this time. Aim for 5 to 15 terms: the main actors, places and institutions, and the words for the issue itself in every language you searched (`"rent cap"`, `"tope de alquiler"`, `"plafonnement des loyers"`). Matching ignores case and accents and works on whole words; `word*` matches the beginning of a word (`lloguer*`), and `a & b` needs both in the same item, for words too common on their own (`"strike & rail"`). Quote terms with spaces.
 
 ## Story so far
 
@@ -120,19 +133,19 @@ date = 2026-10-25
 
 ## intro
 
-Good morning. This is Telex for Sunday, the twenty-fifth of October. Israel votes on Tuesday, and the American forecasts held steady.
+Good morning. This is Telex for Sunday, the twenty-fifth of October. Brussels votes on chat control on Thursday, and Barcelona's rent cap widened.
 
-## israel-election-2026
+## eu-chat-control
 
 Spoken text for this topic, in short paragraphs.
 
-## us-midterms-2026
+## bcn-rent-cap
 
 Spoken text.
 
-## quiet: iran-hormuz, collserola-swine-fever
+## quiet: paris-velo, swiss-pensions
 
-Nothing material today on the Iran war, or on the Collserola closure.
+Nothing material today on the Paris cycling network, or on Swiss pensions.
 
 ## outro
 
@@ -145,7 +158,7 @@ The `## ` lines are segment markers, not spoken: `intro`, then one segment per u
 
 - **Order** the topic segments by how much changed, biggest first.
 - **Each topic segment**: the headline in one sentence; then context; then the two or three changes that matter most (pick, don't read the whole "What changed" list); then one sentence on what to watch and when.
-- **Context depends on the gap.** If the report's `since` is three days or less before today, give one orienting sentence ("Israel votes on Tuesday, and neither bloc is near a majority"). For a baseline, or a gap of four days or more, give up to three sentences condensed from the Story so far.
+- **Context depends on the gap.** If the report's `since` is three days or less before today, give one orienting sentence ("The Council votes on Thursday, and neither side has a majority"). For a baseline, or a gap of four days or more, give up to three sentences condensed from the Story so far.
 - **Length**: an update segment 150 to 250 words (at most 280), a baseline at most 350, the intro at most 60, the outro at most 40, the whole show at most 1400 words (about ten minutes).
 - **Tone**: plain and calm, for one listener. No teasers, no "stay tuned", no sign-off chatter, no jokes.
 
@@ -166,6 +179,7 @@ The `## ` lines are segment markers, not spoken: `intro`, then one segment per u
   - `(only in he sources)`: "only Hebrew-language outlets report this";
   - `(no independent confirmation)`: "Iranian state media says so; nobody independent has confirmed it";
   - `(headline only)`: "according to a headline we could not read in full";
+  - `(feed summary)`: "according to a summary we could not read in full";
   - `(low-confidence source)`: "from a source we treat with caution".
 
 `check-show` rejects digits, symbols, brackets, Markdown, non-Latin letters, overlong sentences and segments, missing or misfiled topics. It cannot check the labels: that part is on you.

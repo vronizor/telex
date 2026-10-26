@@ -22,6 +22,12 @@ MAX_REACH_PER_RUN = 10
 REACH_COLUMNS = ("domain", "search", "reach", "note")
 MAX_EVERY = 12
 SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,59}$")
+MAX_WATCH = 30
+WIRE_DEFAULT_DAYS = 14
+WIRE_MIN_DAYS = 7
+WIRE_MAX_DAYS = 45
+WIRE_CAP = 200
+FEED_RE = re.compile(r"^https?://[^\s/]+\.[^\s/]+(/\S*)?$")
 
 
 def today_local() -> date:
@@ -37,6 +43,7 @@ def load_topics(root: Path = ROOT) -> list[dict]:
         data.setdefault("active", True)
         data.setdefault("local", True)
         data["extra_languages"] = list(data.get("extra_languages", []))
+        data["watch"] = clean_watch(data.get("watch", []))
         data.pop("languages", None)
         topics.append(data)
     return topics
@@ -65,11 +72,22 @@ def load_sources(root: Path = ROOT) -> dict[str, dict]:
         for key, allowed in (("role", ROLES), ("tier", TIERS), ("reach", REACH)):
             if info.get(key) not in allowed:
                 info.pop(key, None)
+        if "feeds" in info:
+            info["feeds"] = clean_feeds(info["feeds"])
         clean[domain.lower().removeprefix("www.")] = info
     return clean
 
 
-OUTLET_KEYS = ("role", "tier", "languages", "country", "reach", "checked", "note")
+def clean_feeds(urls) -> list[str]:
+    out = []
+    for url in urls if isinstance(urls, list) else []:
+        url = str(url).strip()
+        if FEED_RE.match(url) and url not in out:
+            out.append(url)
+    return out
+
+
+OUTLET_KEYS = ("role", "tier", "languages", "country", "reach", "checked", "feeds", "note")
 DOMAIN_RE = re.compile(r"^[a-z0-9-]+(\.[a-z0-9-]+)+$")
 
 
@@ -113,6 +131,158 @@ def set_outlet(root: Path, domain: str, **changes) -> Path:
     path = root / "sources.toml"
     path.write_text(dump_sources(outlets), encoding="utf-8")
     return path
+
+
+def set_feeds(root: Path, domain: str, add: list[str] = (), remove: list[str] = ()) -> Path:
+    domain = clean_domain(domain)
+    outlets = load_sources(root)
+    info = outlets.setdefault(domain, {})
+    feeds = [url for url in info.get("feeds", []) if url not in remove]
+    for url in add:
+        url = url.strip()
+        if not FEED_RE.match(url):
+            raise ValueError(f"bad feed URL: {url!r}")
+        if url not in feeds:
+            feeds.append(url)
+    if feeds:
+        info["feeds"] = feeds
+    else:
+        info.pop("feeds", None)
+    path = root / "sources.toml"
+    path.write_text(dump_sources(outlets), encoding="utf-8")
+    return path
+
+
+def all_feeds(root: Path = ROOT) -> list[tuple[str, str]]:
+    return [
+        (url, domain)
+        for domain, info in load_sources(root).items()
+        for url in info.get("feeds", [])
+    ]
+
+
+def fold(text: str) -> str:
+    """Casefolded, accents stripped, typographic apostrophes straightened, spaces collapsed."""
+    text = unicodedata.normalize("NFKD", str(text).casefold().replace("’", "'"))
+    return " ".join("".join(c for c in text if not unicodedata.combining(c)).split())
+
+
+def clean_watch(terms) -> list[str]:
+    out, seen = [], set()
+    for term in terms if isinstance(terms, list) else []:
+        parts = [" ".join(p.split()) for p in str(term).split("&")]
+        term = " & ".join(p for p in parts if p.strip("*"))
+        key = fold(term)
+        if term and len(term) <= 80 and key not in seen:
+            seen.add(key)
+            out.append(term)
+    return out[:MAX_WATCH]
+
+
+def _term_re(part: str) -> re.Pattern:
+    prefix = part.endswith("*")
+    body = re.escape(fold(part.rstrip("*")))
+    return re.compile(rf"(?<!\w){body}" + ("" if prefix else r"(?!\w)"))
+
+
+def watch_matcher(terms):
+    """Returns a function giving the terms that match a text: whole words, `a & b` needs both,
+    a trailing `*` matches word beginnings."""
+    compiled = [(t, [_term_re(p) for p in t.split(" & ")]) for t in clean_watch(terms)]
+
+    def match(text: str) -> list[str]:
+        folded = fold(text)
+        return [t for t, parts in compiled if all(r.search(folded) for r in parts)]
+
+    return match
+
+
+def wire_path(root: Path, topic_id: str) -> Path:
+    return root / "wire" / f"{topic_id}.jsonl"
+
+
+def item_day(item: dict) -> date | None:
+    try:
+        return date.fromisoformat(str(item.get("seen", ""))[:10])
+    except ValueError:
+        return None
+
+
+def read_wire(root: Path, topic_id: str) -> list[dict]:
+    path = wire_path(root, topic_id)
+    if not path.exists():
+        return []
+    items = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(item, dict) and item.get("url") and item_day(item):
+            items.append(item)
+    return items
+
+
+def write_wire(root: Path, topic_id: str, items: list[dict]) -> Path:
+    path = wire_path(root, topic_id)
+    items = sorted(items, key=lambda i: str(i.get("seen", "")), reverse=True)[:WIRE_CAP]
+    if not items:
+        path.unlink(missing_ok=True)
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [json.dumps(i, ensure_ascii=False, sort_keys=True) for i in items]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def wire_start(root: Path, topic_id: str, today: date) -> date:
+    """First day of a topic's look-back: its previous report, but at least 7 and at most 45 days."""
+    dates = report_dates(root, topic_id)
+    start = dates[-1] if dates else today - timedelta(days=WIRE_DEFAULT_DAYS)
+    start = min(start, today - timedelta(days=WIRE_MIN_DAYS))
+    return max(start, today - timedelta(days=WIRE_MAX_DAYS))
+
+
+def wire_since(root: Path, topic_id: str) -> date | None:
+    dates = report_dates(root, topic_id)
+    return dates[-1] if dates else None
+
+
+def wire_report(root: Path, topic_id: str, since: date | None = None) -> dict:
+    outlets = load_sources(root)
+    items = [i for i in read_wire(root, topic_id) if since is None or item_day(i) >= since]
+    groups: dict[str, list[dict]] = {}
+    for item in items:
+        groups.setdefault(str(item.get("domain", "")), []).append(item)
+    tier_order = {"prefer": 0, None: 1, "avoid": 2}
+    out = []
+    for domain, group in groups.items():
+        info = outlets.get(domain, {})
+        out.append(
+            {
+                "domain": domain,
+                "role": info.get("role"),
+                "tier": info.get("tier"),
+                "reach": info.get("reach"),
+                "items": [
+                    {
+                        k: i.get(k)
+                        for k in ("seen", "published", "title", "summary", "url", "matched")
+                    }
+                    for i in group
+                ],
+            }
+        )
+    out.sort(key=lambda g: (tier_order.get(g["tier"], 1), -len(g["items"]), g["domain"]))
+    return {"topic": topic_id, "since": since, "items": len(items), "outlets": out}
+
+
+def set_watch(root: Path, topic_id: str, terms: list[str]) -> Path:
+    topic = next((t for t in load_topics(root) if t["id"] == topic_id), None)
+    if topic is None:
+        raise ValueError(f"no such topic: {topic_id!r}")
+    topic["watch"] = clean_watch(terms)
+    return write_topic(root, topic)
 
 
 def write_reader(root: Path, read: list[str]) -> Path:
@@ -532,6 +702,8 @@ def dump_topic(topic: dict) -> str:
     ]
     if topic.get("extra_languages"):
         lines.append(f"extra_languages = {json.dumps(list(topic['extra_languages']))}")
+    if watch := clean_watch(topic.get("watch")):
+        lines.append(f"watch = {json.dumps(watch, ensure_ascii=False)}")
     if every(topic) > 1:
         lines.append(f"every = {every(topic)}")
     if isinstance(topic.get("until"), date):
@@ -551,7 +723,7 @@ def write_topic(root: Path, topic: dict) -> Path:
     if path.exists():
         with path.open("rb") as f:
             old = tomllib.load(f)
-        topic = {**{k: old[k] for k in ("until", "every") if k in old}, **topic}
+        topic = {**{k: old[k] for k in ("until", "every", "watch") if k in old}, **topic}
         same = old.get("cadence") == topic["cadence"] and every(old) == every(topic)
         if "anchor" not in topic and same and anchor_of(old) is not None:
             topic = with_anchor(topic, anchor_of(old))
@@ -596,6 +768,7 @@ def plan(root: Path, today: date, limit: int = MAX_PER_RUN) -> dict:
                 "queued": is_queued(root, t["id"]),
                 "previous_report": f"reports/{t['id']}/{dates[-1]}.md" if dates else None,
                 "kind": "update" if dates else "baseline",
+                "wire_items": wire_report(root, t["id"], wire_since(root, t["id"]))["items"],
                 "_order": (not is_queued(root, t["id"]), bool(dates), (dates or [date.min])[-1]),
             }
         )
@@ -801,6 +974,14 @@ def main(argv: list[str] | None = None) -> int:
     p_fc.add_argument("--today", type=date.fromisoformat, default=None)
     p_show = sub.add_parser("check-show")
     p_show.add_argument("file", type=Path, nargs="?")
+    p_watch = sub.add_parser("watch")
+    p_watch.add_argument("topic_id")
+    p_watch.add_argument("terms", nargs="*")
+    p_watch.add_argument("--clear", action="store_true")
+    p_wire = sub.add_parser("wire")
+    p_wire.add_argument("topic_id")
+    p_wire.add_argument("--since", type=date.fromisoformat, default=None)
+    p_wire.add_argument("--all", action="store_true")
     args = parser.parse_args(argv)
     if args.cmd == "check-show":
         result = check_show(ROOT, args.file or ROOT / "shows" / f"{today_local()}.md")
@@ -816,6 +997,17 @@ def main(argv: list[str] | None = None) -> int:
             (start + timedelta(days=i)).isoformat(): ids
             for i, ids in enumerate(forecast(ROOT, start, args.days))
         }
+    elif args.cmd == "watch":
+        if args.terms or args.clear:
+            set_watch(ROOT, args.topic_id, [] if args.clear else args.terms)
+        topic = next((t for t in load_topics(ROOT) if t["id"] == args.topic_id), None)
+        if topic is None:
+            print(f"no such topic: {args.topic_id}", file=sys.stderr)
+            return 1
+        result = {"topic": args.topic_id, "watch": topic["watch"]}
+    elif args.cmd == "wire":
+        since = None if args.all else args.since or wire_since(ROOT, args.topic_id)
+        result = wire_report(ROOT, args.topic_id, since)
     elif args.cmd == "plan":
         result = plan(ROOT, args.today or today_local(), args.max)
     elif args.cmd == "reach-plan":

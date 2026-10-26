@@ -82,13 +82,69 @@
       <button type="submit" name="role" value="" class="{% if not o.role %}is-on{% endif %}">?</button>
     </div>
   </form>
-  {% if not o.queued %}
-  <form class="src-test" method="post" action="/sources/test">
+  {% if o.feeds %}
+  <ul class="feed-list">
+    {% for url in o.feeds %}{% set cls, text = health[url] %}
+    <li>
+      <span class="feed-url">{{ url.split("://", 1)[1] }}</span>
+      <span class="feed-meta">
+      <span class="label feed-health {{ cls or 'muted' }}">{{ text }}</span>
+      <form method="post" action="/sources/feeds">
+        <input type="hidden" name="domain" value="{{ o.domain }}">
+        <input type="hidden" name="url" value="{{ url }}">
+        <input type="hidden" name="action" value="remove">
+        <input type="hidden" name="show" value="{{ show }}">
+        <button class="btn-link label" type="submit">remove</button>
+      </form>
+      </span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if find == o.domain %}
+  <div class="feed-found">
+    {% if found_error %}<p class="is-error">{{ found_error }}</p>
+    {% elif not found %}<p class="muted">The homepage advertises no feeds. Look for an RSS page on the site and paste the address.</p>
+    {% else %}
+    <p class="muted">Advertised on the homepage:</p>
+    <ul class="feed-list">
+      {% for f in found %}
+      <li>
+        <span class="feed-url">{{ f.title or f.url.split("://", 1)[1] }}</span>
+        <span class="feed-meta">
+        <span class="feed-health muted">{{ f.url.split("://", 1)[1] if f.title else "" }}</span>
+        {% if f.url in o.feeds %}<span class="label muted">listed</span>{% else %}
+        <form method="post" action="/sources/feeds">
+          <input type="hidden" name="domain" value="{{ o.domain }}">
+          <input type="hidden" name="url" value="{{ f.url }}">
+          <input type="hidden" name="show" value="{{ show }}">
+          <button class="btn-link label" type="submit">add</button>
+        </form>{% endif %}
+        </span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+  {% endif %}
+  <form class="feed-add" method="post" action="/sources/feeds">
     <input type="hidden" name="domain" value="{{ o.domain }}">
     <input type="hidden" name="show" value="{{ show }}">
-    <button class="btn-link label" type="submit">Test reachability</button>
+    <span class="add-row">
+      <input name="url" type="text" inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="Feed address (https://…)" required aria-label="Feed address for {{ o.domain }}">
+      <button class="btn" type="submit">Add feed</button>
+    </span>
   </form>
-  {% endif %}
+  <div class="src-links">
+    {% if not o.queued %}
+    <form class="src-test" method="post" action="/sources/test">
+      <input type="hidden" name="domain" value="{{ o.domain }}">
+      <input type="hidden" name="show" value="{{ show }}">
+      <button class="btn-link label" type="submit">Test reachability</button>
+    </form>
+    {% endif %}
+    <a class="btn-link label" href="/sources?show={{ show }}&amp;find={{ o.domain | urlencode }}#o-{{ o.domain }}">Find feeds</a>
+  </div>
 </div>
 {% endfor %}
 {% endblock %}
