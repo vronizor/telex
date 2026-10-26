@@ -2,8 +2,6 @@
 {% from "_radio.html" import player, clock %}
 {% block title %}Telex Radio{% if show %} · {{ show.day.strftime("%a %d %b") }}{% endif %}{% endblock %}
 {% block content %}
-<a class="back label" href="/">← Telex</a>
-<p class="topic-meta label">Radio</p>
 
 {% if not show %}
 <h1 class="headline">No show yet</h1>

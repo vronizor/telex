@@ -12,7 +12,7 @@
 <section class="radio-strip" aria-label="Telex Radio">
   <a class="radio-head label" href="/radio/{{ show.day }}">
     <span>Radio · {{ show.day | short_date(today) }}</span>
-    {% if show.state == "ready" %}<span class="muted">{{ show.minutes }} min · {{ show.topic_chapters | length }} {{ "segment" if show.topic_chapters | length == 1 else "segments" }}</span>
+    {% if show.state == "ready" %}<span class="muted">{{ show.minutes }} min</span>
     {% elif show.state == "recording" %}<span class="muted">recording…</span>
     {% else %}<span class="is-error">not recorded</span>{% endif %}
     <span class="push">Show →</span>
@@ -38,7 +38,7 @@
     Weekly topics per day{% if daily %} · +{{ daily }} daily{% endif %}{% if monthly_days %} · monthly on {{ monthly_days | join(", ") }}{% endif %}
   </p>
   <p class="edition-line label">
-    {% if latest_edition %}<a href="/opds/edition/{{ latest_edition.day }}.epub">Edition {{ latest_edition.range }} ↓</a> · {% endif %}next edition {{ next_edition | short_date(today) }} · <a href="/sources">Sources →</a>
+    {% if latest_edition %}<a href="/opds/edition/{{ latest_edition.day }}.epub">Edition {{ latest_edition.range }} ↓</a> · {% endif %}next edition {{ next_edition | short_date(today) }}
   </p>
 </section>
 
