@@ -79,4 +79,5 @@ def test_opds_feed_and_files(client):
     assert client.get("/opds/cover/2026-10-17.png").content[:4] == b"\x89PNG"
     assert client.get("/opds/edition/2020-01-01.epub").status_code == 404
     assert client.get("/opds/edition/..%2Fsecrets.epub").status_code in (404, 422)
-    assert "Edition 11–17 Oct 2026" in client.get("/").text
+    latest = edition.list_editions(app_module.settings, limit=1)[0]
+    assert f"Edition {latest['range']}" in client.get("/").text

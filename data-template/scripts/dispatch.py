@@ -244,8 +244,8 @@ def every(topic: dict) -> int:
     return max(1, min(n, MAX_EVERY))
 
 
-def next_due(topic: dict, last: date) -> date:
-    """First day a topic is due again after a report on `last`, honouring its slot and `every`."""
+def legacy_next_due(topic: dict, last: date) -> date:
+    """Schedule before anchors: N days, weeks or months after the last report, on the slot."""
     n, cadence, slot = every(topic), topic["cadence"], topic.get("slot")
     if cadence == "daily":
         return last + timedelta(days=n)
@@ -256,6 +256,55 @@ def next_due(topic: dict, last: date) -> date:
         return target - timedelta(days=(target.weekday() - slot) % 7)
     month = _shift_month(last, n)
     return month.replace(day=slot) if slot is not None else month
+
+
+def period_days(cadence: str, n: int) -> int:
+    return {"daily": 1, "weekly": 7, "monthly": 30}[cadence] * n
+
+
+def min_gap(topic: dict) -> int:
+    return max(1, period_days(topic["cadence"], every(topic)) // 2)
+
+
+def anchor_of(topic: dict) -> date | None:
+    anchor = topic.get("anchor")
+    return anchor if isinstance(anchor, date) and not isinstance(anchor, datetime) else None
+
+
+def grid(topic: dict, start: date, end: date, anchor: date | None = None) -> list[date]:
+    """Scheduled days in [start, end]: the anchor, then every N days, weeks or months after it."""
+    anchor = anchor or anchor_of(topic)
+    if anchor is None or end < anchor:
+        return []
+    start = max(start, anchor)
+    n, cadence = every(topic), topic["cadence"]
+    if cadence in ("daily", "weekly"):
+        step = period_days(cadence, n)
+        first = anchor + timedelta(days=-(-(start - anchor).days // step) * step)
+        return [first + timedelta(days=i * step) for i in range((end - first).days // step + 1)]
+    days, k = [], 0
+    while True:
+        day = _shift_month(anchor, k * n).replace(day=anchor.day)
+        if day > end:
+            return days
+        if day >= start:
+            days.append(day)
+        k += 1
+
+
+def next_due(topic: dict, last: date) -> date:
+    """First day a topic is due again after a report on `last`."""
+    if anchor_of(topic) is None:
+        return legacy_next_due(topic, last)
+    anchor = anchor_of(topic)
+    if anchor > last:
+        return anchor
+    earliest = last + timedelta(days=min_gap(topic))
+    for horizon in (400, 4000):
+        days = grid(topic, earliest, earliest + timedelta(days=horizon))
+        if days:
+            return days[0]
+    return earliest
 
 
 def last_scheduled(topic: dict, today: date) -> date:
@@ -283,13 +332,133 @@ def has_ended(topic: dict, today: date) -> bool:
     return isinstance(until, date) and today > until
 
 
-def is_due(root: Path, topic: dict, today: date) -> bool:
-    if not topic.get("active", True) or has_ended(topic, today):
+def due_on(topic: dict, day: date, last: date | None, queued: bool = False) -> bool:
+    if not topic.get("active", True) or has_ended(topic, day):
         return False
-    if is_queued(root, topic["id"]):
+    if queued or last is None:
         return True
+    if anchor_of(topic) is None:
+        return day >= legacy_next_due(topic, last)
+    return day >= next_due(topic, last)
+
+
+def is_due(root: Path, topic: dict, today: date) -> bool:
     dates = report_dates(root, topic["id"])
-    return not dates or today >= next_due(topic, dates[-1])
+    return due_on(topic, today, dates[-1] if dates else None, is_queued(root, topic["id"]))
+
+
+def forecast(
+    root: Path, start: date, days: int, topics: list[dict] | None = None
+) -> list[list[str]]:
+    """Topic ids due on each of `days` days from `start`, ignoring the per-run cap."""
+    topics = load_topics(root) if topics is None else topics
+    out: list[list[str]] = [[] for _ in range(days)]
+    for t in topics:
+        if not t.get("active", True):
+            continue
+        dates = report_dates(root, t["id"])
+        last = dates[-1] if dates else None
+        queued = is_queued(root, t["id"])
+        due = start if queued or last is None else next_due(t, last)
+        while (due - start).days < days and not has_ended(t, max(due, start)):
+            day = max(due, start)
+            out[(day - start).days].append(t["id"])
+            due = next_due(t, day)
+    return out
+
+
+def candidate_anchors(cadence: str, n: int, earliest: date) -> list[date]:
+    if cadence in ("daily", "weekly"):
+        return [earliest + timedelta(days=i) for i in range(period_days(cadence, n))]
+    out = []
+    for k in range(n + 1):
+        month = _shift_month(earliest, k)
+        out += [month.replace(day=dd) for dd in range(1, 29) if month.replace(day=dd) >= earliest]
+    return out[: 28 * n]
+
+
+def pick_anchor(
+    root: Path,
+    topics: list[dict],
+    topic: dict,
+    start: date,
+    earliest: date | None = None,
+    base: list[int] | None = None,
+) -> date:
+    """The anchor from `earliest` that keeps the busiest coming day as light as possible."""
+    n, cadence = every(topic), topic["cadence"]
+    horizon = min(400, max(84, 2 * period_days(cadence, n) + 31))
+    if base is None:
+        others = [t for t in topics if t["id"] != topic.get("id")]
+        base = [len(ids) for ids in forecast(root, start, horizon, others)]
+    earliest = max(earliest or start, start)
+    until = topic.get("until") if isinstance(topic.get("until"), date) else None
+    end = start + timedelta(days=len(base) - 1)
+    if until:
+        end = min(end, until)
+
+    def score(anchor: date) -> tuple:
+        loads = list(base)
+        for day in grid(topic, start, end, anchor):
+            loads[(day - start).days] += 1
+        return (max(loads), sum(x * x for x in loads), anchor)
+
+    candidates = candidate_anchors(cadence, n, earliest)
+    if until:
+        candidates = [c for c in candidates if c <= until] or candidates
+    return min(candidates, key=score)
+
+
+def with_anchor(topic: dict, anchor: date) -> dict:
+    topic = {**topic, "anchor": anchor}
+    if topic["cadence"] == "weekly":
+        topic["slot"] = anchor.weekday()
+    elif topic["cadence"] == "monthly":
+        topic["slot"] = anchor.day
+    else:
+        topic.pop("slot", None)
+    return topic
+
+
+def anchor_error(topic: dict, anchor: date, start: date) -> str | None:
+    if anchor < start:
+        return f"The next report can't be before {start:%a %d %b}."
+    if topic["cadence"] == "monthly" and anchor.day > 28:
+        return "Monthly topics run on day 1 to 28."
+    until = topic.get("until")
+    if isinstance(until, date) and anchor > until:
+        return f"The next report is after the end date ({until:%a %d %b})."
+    return None
+
+
+def rebalance(root: Path, start: date, apply: bool = False) -> list[dict]:
+    """Move topics whose schedule can make the busiest coming days lighter, most frequent first."""
+    topics = [t for t in load_topics(root) if t.get("active", True) and not has_ended(t, start)]
+    topics.sort(key=lambda t: (period_days(t["cadence"], every(t)), t["id"]))
+    moves = []
+    for t in topics:
+        if anchor_of(t) is None:
+            continue
+        dates = report_dates(root, t["id"])
+        last = dates[-1] if dates else None
+        current = next_due(t, last) if last else anchor_of(t)
+        horizon = min(400, max(84, 2 * period_days(t["cadence"], every(t)) + 31))
+        others = [o for o in load_topics(root) if o["id"] != t["id"]]
+        base = [len(ids) for ids in forecast(root, start, horizon, others)]
+        earliest = max(start, last + timedelta(days=min_gap(t))) if last else start
+        best = pick_anchor(root, others, t, start, earliest, base)
+
+        def peak(anchor: date, topic=t, base=base) -> tuple:
+            loads = list(base)
+            for day in grid(topic, start, start + timedelta(days=len(base) - 1), anchor):
+                loads[(day - start).days] += 1
+            return (max(loads), sum(x * x for x in loads))
+
+        if current is not None and current >= start and peak(best) < peak(current):
+            moves.append({"id": t["id"], "from": current.isoformat(), "to": best.isoformat()})
+            if apply:
+                write_topic(root, with_anchor(t, best))
+    return moves
 
 
 def slot_loads(topics: list[dict], cadence: str) -> list[int]:
@@ -352,8 +521,10 @@ def dump_topic(topic: dict) -> str:
         f"title = {_toml_string(topic['title'])}",
         f"cadence = {json.dumps(topic['cadence'])}",
     ]
-    if topic.get("slot") is not None:
+    if topic.get("slot") is not None and topic["cadence"] != "daily":
         lines.append(f"slot = {int(topic['slot'])}")
+    if anchor_of(topic) is not None:
+        lines.append(f"anchor = {anchor_of(topic)}")
     lines += [
         f"local = {'true' if topic.get('local', True) else 'false'}",
         f"active = {'true' if topic.get('active', True) else 'false'}",
@@ -381,24 +552,36 @@ def write_topic(root: Path, topic: dict) -> Path:
         with path.open("rb") as f:
             old = tomllib.load(f)
         topic = {**{k: old[k] for k in ("until", "every") if k in old}, **topic}
+        same = old.get("cadence") == topic["cadence"] and every(old) == every(topic)
+        if "anchor" not in topic and same and anchor_of(old) is not None:
+            topic = with_anchor(topic, anchor_of(old))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(dump_topic(topic), encoding="utf-8")
     return path
 
 
-def assign_missing_slots(root: Path) -> list[str]:
-    topics = load_topics(root)
+def assign_missing_slots(root: Path, today: date | None = None) -> list[str]:
+    """Give every topic an anchor: its current next date if it has reports, else a balanced one."""
+    today = today or today_local()
     changed = []
-    for t in topics:
+    for t in load_topics(root):
+        if anchor_of(t) is not None:
+            continue
+        dates = report_dates(root, t["id"])
         if t["cadence"] != "daily" and t.get("slot") is None:
-            t["slot"] = pick_slot(topics, t["cadence"])
-            write_topic(root, t)
-            changed.append(t["id"])
+            t["slot"] = pick_slot(load_topics(root), t["cadence"])
+        if dates:
+            anchor = legacy_next_due(t, dates[-1])
+        else:
+            earliest = today + timedelta(days=min_gap(t))
+            anchor = pick_anchor(root, load_topics(root), t, today, earliest)
+        write_topic(root, with_anchor(t, anchor))
+        changed.append(t["id"])
     return changed
 
 
 def plan(root: Path, today: date, limit: int = MAX_PER_RUN) -> dict:
-    assigned = assign_missing_slots(root)
+    assigned = assign_missing_slots(root, today)
     due = []
     for t in load_topics(root):
         if not is_due(root, t, today):
@@ -610,6 +793,12 @@ def main(argv: list[str] | None = None) -> int:
     p_rec = sub.add_parser("reach-record")
     p_rec.add_argument("results", type=Path)
     p_rec.add_argument("--today", type=date.fromisoformat, default=None)
+    p_reb = sub.add_parser("rebalance")
+    p_reb.add_argument("--apply", action="store_true")
+    p_reb.add_argument("--today", type=date.fromisoformat, default=None)
+    p_fc = sub.add_parser("forecast")
+    p_fc.add_argument("--days", type=int, default=14)
+    p_fc.add_argument("--today", type=date.fromisoformat, default=None)
     p_show = sub.add_parser("check-show")
     p_show.add_argument("file", type=Path, nargs="?")
     args = parser.parse_args(argv)
@@ -618,7 +807,16 @@ def main(argv: list[str] | None = None) -> int:
         json.dump(result, sys.stdout, indent=2, ensure_ascii=False)
         print()
         return 0 if result["ok"] else 1
-    if args.cmd == "plan":
+    if args.cmd == "rebalance":
+        start = (args.today or today_local()) + timedelta(days=1)
+        result = {"moves": rebalance(ROOT, start, args.apply), "applied": args.apply}
+    elif args.cmd == "forecast":
+        start = args.today or today_local()
+        result = {
+            (start + timedelta(days=i)).isoformat(): ids
+            for i, ids in enumerate(forecast(ROOT, start, args.days))
+        }
+    elif args.cmd == "plan":
         result = plan(ROOT, args.today or today_local(), args.max)
     elif args.cmd == "reach-plan":
         result = reach_plan(ROOT, args.all)

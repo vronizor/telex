@@ -328,12 +328,29 @@ class Store:
                 return self.topic(raw)
         return None
 
-    def weekly_loads(self) -> list[int]:
-        return self.d.slot_loads(self.raw_topics(), "weekly")
+    def week_ahead(self, start: date, days: int = 7) -> list[tuple[date, int]]:
+        loads = self.d.forecast(self.root, start, days)
+        return [(start + timedelta(days=i), len(ids)) for i, ids in enumerate(loads)]
 
-    def new_slots(self, exclude: str | None = None) -> dict[str, int | None]:
-        others = [t for t in self.raw_topics() if t["id"] != exclude]
-        return {cadence: self.d.pick_slot(others, cadence) for cadence in self.d.CADENCES}
+    def suggestions(self, start: date, exclude: str | None = None) -> dict[str, str]:
+        d = self.d
+        topics = self.raw_topics()
+        others = [t for t in topics if t["id"] != exclude]
+        own = next((t for t in topics if t["id"] == exclude), None)
+        dates = d.report_dates(self.root, exclude) if own else []
+        base = [len(ids) for ids in d.forecast(self.root, start, 400, others)]
+        out = {}
+        for cadence in d.CADENCES:
+            for n in range(1, d.MAX_EVERY + 1):
+                probe = {"id": exclude or "", "cadence": cadence, "every": n}
+                if own and isinstance(own.get("until"), date):
+                    probe["until"] = own["until"]
+                horizon = min(400, max(84, 2 * d.period_days(cadence, n) + 31))
+                gap = timedelta(days=d.min_gap(probe))
+                earliest = max(start, dates[-1] + gap) if dates else start + gap
+                anchor = d.pick_anchor(self.root, others, probe, start, earliest, base[:horizon])
+                out[f"{cadence}:{n}"] = anchor.isoformat()
+        return out
 
     def unique_id(self, title: str) -> str:
         base = slugify(title)
@@ -348,12 +365,23 @@ class Store:
         if previous and previous.get("until") and "until" not in data:
             data["until"] = previous["until"]
         others = [t for t in self.raw_topics() if t["id"] != data["id"]]
-        if previous and previous["cadence"] == data["cadence"]:
+        data["created"] = previous.get("created") if previous else self.now().date()
+        same = (
+            previous is not None
+            and previous["cadence"] == data["cadence"]
+            and d.every(previous) == d.every(data)
+        )
+        anchor = data.pop("next", None)
+        if anchor is None and same:
             data["slot"] = previous.get("slot")
-            data["created"] = previous.get("created")
         else:
-            data["slot"] = d.pick_slot(others, data["cadence"])
-            data["created"] = previous.get("created") if previous else self.now().date()
+            if anchor is None:
+                start = self.next_dispatch(self.now())
+                gap = timedelta(days=d.min_gap(data))
+                dates = d.report_dates(self.root, data["id"]) if previous else []
+                earliest = max(start, dates[-1] + gap) if dates else start + gap
+                anchor = d.pick_anchor(self.root, others, data, start, earliest)
+            data = d.with_anchor(data, anchor)
         path = d.write_topic(self.root, data)
         return str(path.relative_to(self.root))
 

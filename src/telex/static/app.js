@@ -27,14 +27,22 @@ document.addEventListener("DOMContentLoaded", () => {
   const preview = document.getElementById("slot-preview");
   if (preview) {
     const form = preview.closest("form");
-    const slots = JSON.parse(preview.dataset.slots);
+    const suggestions = JSON.parse(preview.dataset.suggestions || "{}");
     const unitOf = { daily: "day", weekly: "week", monthly: "month" };
-    const describe = (cadence, n, label) => {
+    const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const short = (day) => day.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" }).replace(",", "");
+    const ordinal = (n) => {
+      if (n % 100 >= 10 && n % 100 <= 20) return `${n}th`;
+      return n + ({ 1: "st", 2: "nd", 3: "rd" }[n % 10] || "th");
+    };
+    const rhythm = (cadence, n, day) => {
       const base = n === 1 ? `every ${unitOf[cadence]}` : `every ${n} ${unitOf[cadence]}s`;
-      if (cadence === "daily") return base;
-      if (!label) return `${base}, day not set yet`;
-      if (cadence === "weekly") return n === 1 ? `every ${label}` : `${base} on ${label}`;
-      return n === 1 ? `monthly on the ${label}` : `${base} on the ${label}`;
+      if (cadence === "daily" || !day) return base;
+      if (cadence === "weekly") {
+        const name = weekdays[day.getDay()].slice(0, 3);
+        return n === 1 ? `every ${name}` : `${base} on ${name}`;
+      }
+      return n === 1 ? `monthly on the ${ordinal(day.getDate())}` : `${base} on the ${ordinal(day.getDate())}`;
     };
     const update = () => {
       const checked = form.querySelector('input[name="cadence"]:checked');
@@ -44,14 +52,25 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       if (!checked) return;
       const cadence = checked.value;
-      const label = cadence === preview.dataset.originalCadence ? preview.dataset.originalSlot : slots[cadence];
-      const untilInput = form.querySelector('input[name="until"]');
-      let end = "";
-      if (untilInput && untilInput.value) {
-        const day = new Date(untilInput.value + "T12:00:00");
-        end = ", until " + day.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+      const key = `${cadence}:${n}`;
+      const picked = form.querySelector('input[name="next"]').value;
+      const iso = picked || (key === preview.dataset.original ? preview.dataset.current : suggestions[key]);
+      const day = iso ? new Date(iso + "T12:00:00") : null;
+      if (!day) {
+        preview.textContent = rhythm(cadence, n, null);
+        return;
       }
-      preview.textContent = preview.dataset.prefix + describe(cadence, n, label) + end;
+      const text = rhythm(cadence, n, day);
+      let line;
+      const from = cadence === "weekly" ? short(day).slice(4) : short(day);
+      if (preview.dataset.new) line = day ? `First report at the next run; then ${text} from ${from}` : text;
+      else line = day ? `${text[0].toUpperCase()}${text.slice(1)}; next ${short(day)}` : text;
+      const untilInput = form.querySelector('input[name="until"]');
+      if (untilInput && untilInput.value) {
+        const end = new Date(untilInput.value + "T12:00:00");
+        line += ", until " + end.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+      }
+      preview.textContent = line;
     };
     form.addEventListener("input", update);
     form.addEventListener("change", update);

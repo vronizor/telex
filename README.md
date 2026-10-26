@@ -12,19 +12,11 @@ A small self-hosted reader for news briefings that a scheduled Claude run writes
 
 ## Scheduling
 
-- Weekly topics get the least busy weekday, monthly topics the least busy day 1–28, when created; daily topics run every day.
-- A new topic gets its first report at the next run, whatever its slot. A missed run is caught up the next day.
+- Every topic runs on a fixed rhythm from its `anchor` date: every N days, weeks or months after it. A new topic gets its first report at the next run, whatever its rhythm.
+- The anchor is chosen to keep the busiest coming day as light as possible, counting every topic's projected runs over the next 12 weeks (daily ones, `every` and `until` included). It is picked when a topic is created or its cadence or `every` changes; the form shows the suggestion and lets you set the next report date yourself (useful for events).
+- A missed run is caught up the next day. A refresh adds a report without moving the rhythm; the next scheduled run is skipped only if it falls within half an interval of the refresh.
 - At most 4 topics per run (`MAX_PER_RUN`); refresh requests go first, then first reports, then the most overdue.
-
-## Weekly e-reader edition
-
-Every week (`TELEX_EDITION_DAY` at `TELEX_EDITION_TIME`, default Saturday 08:00) the app builds an EPUB from the last seven days of reports, and rebuilds it if those reports change. It is served as an OPDS catalog at `<TELEX_BASE_URL>/opds/`.
-
-- Cover: the week, one line per topic with its tag, change counts and headline.
-- Contents: topics with updates, then the quiet ones in one list.
-- One chapter per topic: the latest "Story so far", then each report of the week (its changes; "Where it stands" and "Watch next" only from the latest), sources as endnotes that the `[TAG]` links jump to.
-
-Build one by hand with `docker compose exec app python -m telex.edition [--date YYYY-MM-DD]`. To list it inside inkbook-digest's catalog, set `EXTRA_CATALOGS=Telex Weekly|<TELEX_BASE_URL>/opds/` there; or add the URL as a second catalog on the e-reader.
+- `python3 scripts/dispatch.py forecast` lists the coming runs; `rebalance` suggests moves that would make busy days lighter, and `rebalance --apply` makes them. Existing topics are never moved otherwise.
 
 ## Morning radio
 

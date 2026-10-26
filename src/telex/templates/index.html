@@ -25,18 +25,16 @@
 <p class="notice">No topics yet. Add the first one below.</p>
 {% else %}
 
-<section aria-label="Weekly schedule">
+<section aria-label="Reports per run, next 7 days">
   <div class="week">
-    {% for load in weekly_loads %}
-    <div class="week-day{% if loop.index0 == today.weekday() %} is-today{% endif %}">
-      <span class="label">{{ DAYS[loop.index0] }}</span>
+    {% for day, load in week %}
+    <div class="week-day{% if loop.first %} is-today{% endif %}">
+      <span class="label">{{ DAYS[day.weekday()] }}</span>
       <span class="week-load">{{ load if load else "·" }}</span>
     </div>
     {% endfor %}
   </div>
-  <p class="week-caption label">
-    Weekly topics per day{% if daily %} · +{{ daily }} daily{% endif %}{% if monthly_days %} · monthly on {{ monthly_days | join(", ") }}{% endif %}
-  </p>
+  <p class="week-caption label">Reports per run, next 7 days</p>
   <p class="edition-line label">
     {% if latest_edition %}<a href="/opds/edition/{{ latest_edition.day }}.epub">Edition {{ latest_edition.range }} ↓</a> · {% endif %}next edition {{ next_edition | short_date(today) }}
   </p>

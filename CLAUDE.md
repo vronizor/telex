@@ -2,7 +2,7 @@
 
 - What it is and how it runs: `README.md`. What the scheduled run does: `data-template/DISPATCHER.md`.
 - No database: the data repo checkout is the store. Topics are TOML, reports are Markdown with TOML front matter, a refresh request is an empty file in `queue/`.
-- Topics may carry `every` (repeat every N days/weeks/months, default 1) and `until` (last day). Scheduling and the topic file format live only in `data-template/scripts/dispatch.py` (stdlib, also run by the dispatcher). The app loads it from the checkout; don't reimplement it in the app.
+- Topics may carry `every` (repeat every N days/weeks/months, default 1), `until` (last day) and `anchor` (the date their rhythm starts from; `slot` mirrors its weekday or day of month). Scheduling and the topic file format live only in `data-template/scripts/dispatch.py` (stdlib, also run by the dispatcher). The app loads it from the checkout; don't reimplement it in the app.
 - Every write from the app goes through `Repo.commit_and_push` (pull, add, commit, push, one retry on rejection), under one lock; run a single uvicorn worker.
 - Theme: all colors, fonts and radii live in `static/themes/<name>.css` (`TELEX_THEME`); `app.css` uses only those variables, never raw values.
 - UI: server-rendered Jinja, one small `app.js`, no build step. Mono (`.label`) for labels, tags, dates and codes; sans for reading. Light and dark via CSS variables; check both.

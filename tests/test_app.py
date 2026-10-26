@@ -1,5 +1,6 @@
 import subprocess
 import tomllib
+from datetime import timedelta
 
 from telex.store import render_markdown
 from tests.conftest import git, remote_file
@@ -103,8 +104,39 @@ def test_edit_keeps_or_reassigns_slot(client, remote):
         },
     )
     data = tomllib.loads(remote_file(remote, "topics/bcn-rent-cap.toml"))
-    assert data["cadence"] == "monthly" and data["slot"] == 1
+    assert data["cadence"] == "monthly" and data["slot"] == data["anchor"].day <= 28
     assert data["active"] is False
+
+
+def test_pinned_next_report_and_preview(client, remote):
+    from telex import app as app_module
+
+    start = app_module.store.next_dispatch(app_module.store.now())
+    pin = start + timedelta(days=9)
+    form = {
+        "title": "Barcelona rent cap",
+        "brief": "New brief",
+        "cadence": "daily",
+        "every": "3",
+        "next": pin.isoformat(),
+        "local": "on",
+        "active": "on",
+    }
+    client.post("/t/bcn-rent-cap/edit", data=form)
+    data = tomllib.loads(remote_file(remote, "topics/bcn-rent-cap.toml"))
+    assert (data["cadence"], data["every"], data["anchor"]) == ("daily", 3, pin)
+    assert "slot" not in data
+    page = client.get("/t/bcn-rent-cap/edit").text
+    assert f"Every 3 days; next {pin:%a %d %b}" in page
+    assert '"monthly:2"' in page
+    late = client.post("/t/bcn-rent-cap/edit", data={**form, "next": "2020-01-01"})
+    assert late.status_code == 400 and "can&#39;t be before" in late.text
+    form["title"] = "Renamed"
+    form.pop("next")
+    client.post("/t/bcn-rent-cap/edit", data=form)
+    data = tomllib.loads(remote_file(remote, "topics/bcn-rent-cap.toml"))
+    assert data["anchor"] == pin and data["title"] == "Renamed"
+    assert "Reports per run, next 7 days" in client.get("/").text
 
 
 def test_refresh_queues_once(client, remote):

@@ -25,6 +25,12 @@
   </fieldset>
 
   <label class="field until-field">
+    <span class="label">Next report (optional)</span>
+    <input name="next" type="date" min="{{ next_min }}" value="{{ next_value }}">
+    <span class="hint label">Leave empty for the quietest day</span>
+  </label>
+
+  <label class="field until-field">
     <span class="label">Ends on (optional)</span>
     <input name="until" type="date" value="{{ until_value }}">
   </label>
@@ -51,10 +57,10 @@
   {% endif %}
 
   <p class="preview label" id="slot-preview"
-     data-slots='{{ slot_labels | tojson }}'
-     data-original-cadence="{{ topic.cadence if topic else '' }}"
-     data-original-slot="{{ original_slot or '' }}"
-     data-prefix="{{ preview_prefix }}">{{ preview }}</p>
+     data-suggestions='{{ suggestions | tojson }}'
+     data-original="{{ original_key }}"
+     data-current="{{ current_next }}"
+     data-new="{{ '' if topic else '1' }}">{{ preview }}</p>
 
   <button class="btn btn-primary btn-wide" type="submit">{{ "Save" if topic else "Add topic" }}</button>
 </form>

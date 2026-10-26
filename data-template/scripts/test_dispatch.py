@@ -83,10 +83,22 @@ def test_plan_assigns_orders_and_caps(root):
     for i in range(3):
         d.write_topic(root, topic(f"daily{i}", "daily"))
     result = d.plan(root, THU, limit=4)
-    assert result["slots_assigned"] == ["fresh"]
+    assert sorted(result["slots_assigned"]) == [
+        "asked",
+        "daily0",
+        "daily1",
+        "daily2",
+        "fresh",
+        "old",
+    ]
+    anchors = {t["id"]: t.get("anchor") for t in d.load_topics(root)}
+    assert anchors["old"] == date(2026, 10, 19)
+    assert anchors["asked"] == date(2026, 10, 29)
+    assert all(anchors.values())
     assert [r["id"] for r in result["run"]] == ["asked", "daily0", "daily1", "daily2"]
     assert result["deferred"] == ["fresh", "old"]
-    assert {t["id"]: t.get("slot") for t in d.load_topics(root)}["fresh"] == 1
+    fresh = {t["id"]: t for t in d.load_topics(root)}["fresh"]
+    assert fresh["slot"] == fresh["anchor"].day and fresh["anchor"] >= THU + timedelta(days=15)
     assert result["run"][0]["kind"] == "update"
     assert result["run"][0]["previous_report"] == f"reports/asked/{THU}.md"
     assert result["run"][1]["kind"] == "baseline"
@@ -376,3 +388,102 @@ Nothing material on beta.
 Back tomorrow.
 """
     assert d.check_show(root, write_show(root, text))["ok"]
+
+
+TUE = date(2026, 10, 27)
+
+
+def test_grid_is_forward_only_and_steps_by_period():
+    t = topic("a", "daily", every=2, anchor=TUE)
+    assert d.grid(t, date(2026, 10, 20), date(2026, 11, 2)) == [
+        TUE,
+        date(2026, 10, 29),
+        date(2026, 10, 31),
+        date(2026, 11, 2),
+    ]
+    w = topic("w", "weekly", 0, every=3, anchor=date(2026, 11, 9))
+    assert d.grid(w, THU, date(2026, 12, 31)) == [
+        date(2026, 11, 9),
+        date(2026, 11, 30),
+        date(2026, 12, 21),
+    ]
+    m = topic("m", "monthly", 26, every=2, anchor=date(2026, 11, 26))
+    assert d.grid(m, THU, date(2027, 3, 31)) == [
+        date(2026, 11, 26),
+        date(2027, 1, 26),
+        date(2027, 3, 26),
+    ]
+
+
+def test_anchored_due_dates(root):
+    t = topic("a", "daily", every=2, anchor=date(2026, 10, 28))
+    add_report(root, "a", date(2026, 10, 25))
+    assert not d.is_due(root, t, TUE)
+    assert d.is_due(root, t, date(2026, 10, 28))
+    assert d.next_due(t, date(2026, 10, 25)) == date(2026, 10, 28)
+    add_report(root, "a", date(2026, 10, 28))
+    assert not d.is_due(root, t, date(2026, 10, 29))
+    assert d.is_due(root, t, date(2026, 10, 31)), "a missed run is caught up the next day"
+    assert not d.is_due(root, {**t, "until": date(2026, 10, 29)}, date(2026, 10, 30))
+
+
+def test_refresh_does_not_cause_back_to_back_runs():
+    w = topic("w", "weekly", 1, anchor=TUE)
+    assert d.next_due(w, date(2026, 11, 2)) == date(2026, 11, 10)
+    assert d.next_due(w, date(2026, 10, 30)) == date(2026, 11, 3)
+
+
+def test_pick_anchor_spreads_topics(root):
+    a = topic("a", "daily", every=2, anchor=TUE)
+    d.write_topic(root, a)
+    b = topic("b", "daily", every=2)
+    assert d.pick_anchor(root, [a], b, TUE) == date(2026, 10, 28)
+    weekly = [topic(f"w{i}", "weekly", i, anchor=TUE + timedelta(days=i)) for i in range(6)]
+    for w in weekly:
+        d.write_topic(root, w)
+    new = topic("n", "weekly")
+    assert (
+        d.pick_anchor(root, weekly, new, TUE, TUE).weekday() == (TUE + timedelta(days=6)).weekday()
+    )
+
+
+def test_write_topic_keeps_anchor_only_while_the_rhythm_is_unchanged(root):
+    d.write_topic(root, topic("a", "daily", every=2, anchor=TUE))
+    d.write_topic(root, topic("a", "daily", every=2, title="renamed"))
+    assert d.load_topics(root)[0]["anchor"] == TUE
+    d.write_topic(root, topic("a", "daily", every=3))
+    assert "anchor" not in d.load_topics(root)[0]
+    d.write_topic(root, d.with_anchor(topic("b", "weekly"), TUE))
+    b = [t for t in d.load_topics(root) if t["id"] == "b"][0]
+    assert (b["slot"], b["anchor"]) == (1, TUE)
+
+
+def test_rebalance_and_forecast(root):
+    for id in ("x", "y"):
+        d.write_topic(root, topic(id, "daily", every=2, anchor=TUE))
+        add_report(root, id, date(2026, 10, 25))
+    assert d.forecast(root, TUE, 2) == [["x", "y"], []]
+    moves = d.rebalance(root, TUE, apply=True)
+    assert len(moves) == 1 and moves[0]["to"] == "2026-10-28"
+    assert d.forecast(root, TUE, 2) in ([["x"], ["y"]], [["y"], ["x"]])
+    assert d.rebalance(root, TUE) == []
+
+
+def test_anchor_errors():
+    w = topic("w", "weekly")
+    assert d.anchor_error(w, date(2026, 10, 26), TUE)
+    assert d.anchor_error(topic("m", "monthly"), date(2026, 10, 30), TUE)
+    assert d.anchor_error(w, date(2026, 10, 28), TUE) is None
+
+
+def test_the_anchor_itself_is_always_honoured():
+    m = topic("m", "monthly", 1, anchor=date(2026, 11, 1))
+    assert d.next_due(m, date(2026, 10, 22)) == date(2026, 11, 1)
+    assert d.next_due(m, date(2026, 11, 1)) == date(2026, 12, 1)
+    assert d.next_due(m, date(2026, 11, 20)) == date(2027, 1, 1)
+
+
+def test_end_date_bounds_the_next_report(root):
+    t = topic("e", "weekly", every=3, until=date(2026, 11, 5))
+    assert d.pick_anchor(root, [], t, TUE, date(2026, 10, 30)) <= date(2026, 11, 5)
+    assert "end date" in d.anchor_error(t, date(2026, 11, 12), TUE)

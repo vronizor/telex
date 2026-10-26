@@ -162,10 +162,6 @@ def index(request: Request):
         group.sort(key=newest_first, reverse=True)
     waiting.sort(key=lambda t: (ORDER[t.state], t.title))
     upcoming = sorted((t for t in topics if t.next_run), key=lambda t: (t.next_run, t.title))
-    daily = sum(1 for t in topics if t.active and t.cadence == "daily")
-    monthly_days = sorted(
-        {t.slot for t in topics if t.active and t.cadence == "monthly" and t.slot}
-    )
     last_report = max((t.latest.day for t in topics if t.latest), default=None)
     show = home_show(now.date())
     response = render(
@@ -178,9 +174,7 @@ def index(request: Request):
         quiet=quiet,
         waiting=waiting,
         upcoming=upcoming[:8],
-        weekly_loads=store.weekly_loads(),
-        daily=daily,
-        monthly_days=monthly_days,
+        week=store.week_ahead(store.next_dispatch(now)),
         last_report=last_report,
         next_dispatch=store.next_dispatch(now),
         latest_edition=next(iter(edition.list_editions(settings, limit=1)), None),
@@ -248,29 +242,52 @@ NEW_TOPIC = {
     "local": True,
     "extra_languages": [],
     "active": True,
+    "next": None,
 }
+
+
+def describe_next(cadence: str, every: int, day: date | None, new: bool) -> str:
+    d = store.d
+    if day is None:
+        return d.describe_schedule(cadence, None, every)
+    slot = day.weekday() if cadence == "weekly" else day.day if cadence == "monthly" else None
+    rhythm = d.describe_schedule(cadence, slot, every)
+    if new:
+        when = f"{day:%d %b}" if cadence == "weekly" else f"{day:%a %d %b}"
+        return f"First report at the next run; then {rhythm} from {when}"
+    return f"{rhythm[0].upper()}{rhythm[1:]}; next {day:%a %d %b}"
 
 
 def form_context(topic: Topic | None, values: dict) -> dict:
     d = store.d
-    slots = store.new_slots(exclude=topic.id if topic else None)
-    keep = topic is not None and topic.cadence == values["cadence"]
-    slot = topic.slot if keep else slots.get(values["cadence"])
-    prefix = "" if topic else "First report at the next run, then "
+    start = store.next_dispatch(store.now())
+    suggestions = store.suggestions(start, exclude=topic.id if topic else None)
     until = values.get("until") if isinstance(values.get("until"), date) else None
     every = values["every"] if isinstance(values["every"], int) and values["every"] > 0 else 1
+    chosen = values.get("next") if isinstance(values.get("next"), date) else None
+    original = f"{topic.cadence}:{topic.every}" if topic else ""
+    current = topic.next_run if topic and topic.next_run else None
+    key = f"{values['cadence']}:{every}"
+    if chosen:
+        day = chosen
+    elif topic and key == original:
+        day = current
+    else:
+        day = date.fromisoformat(suggestions[key]) if key in suggestions else None
+    preview = ""
+    if values["cadence"] in d.CADENCES:
+        preview = describe_next(values["cadence"], every, day, topic is None)
+        preview += f", until {until.day} {until:%b}" if until else ""
     return {
         "topic": topic,
         "values": values,
-        "slot_labels": {c: d.slot_label(c, s) for c, s in slots.items()},
-        "original_slot": d.slot_label(topic.cadence, topic.slot) if topic else None,
-        "preview": prefix
-        + d.describe_schedule(values["cadence"], slot, every)
-        + (f", until {until.day} {until:%b}" if until else "")
-        if values["cadence"] in d.CADENCES
-        else "",
+        "suggestions": suggestions,
+        "original_key": original,
+        "current_next": current.isoformat() if current else "",
+        "next_value": chosen.isoformat() if chosen else "",
+        "next_min": start.isoformat(),
+        "preview": preview,
         "until_value": until.isoformat() if until else "",
-        "preview_prefix": prefix,
         "max_every": d.MAX_EVERY,
         "languages": store.d.LANGUAGES,
         "cadences": store.d.CADENCES,
@@ -304,6 +321,7 @@ def edit_topic(request: Request, topic_id: str):
         "local": t.local,
         "extra_languages": t.extra_languages,
         "active": t.active,
+        "next": None,
     }
     return form_page(request, t, values)
 
@@ -324,6 +342,16 @@ def validate(values: dict) -> str | None:
     if not 1 <= values["every"] <= store.d.MAX_EVERY:
         unit = {"daily": "days", "weekly": "weeks", "monthly": "months"}[values["cadence"]]
         return f"Repeat every 1 to {store.d.MAX_EVERY} {unit}."
+    if values.get("next") == "invalid":
+        return "Give the next report as a date, or leave it empty."
+    if isinstance(values.get("next"), date):
+        probe = {
+            "cadence": values["cadence"],
+            "every": values["every"],
+            "until": values.get("until"),
+        }
+        start = store.next_dispatch(store.now())
+        return store.d.anchor_error(probe, values["next"], start)
     return None
 
 
@@ -350,6 +378,11 @@ async def read_form(request: Request) -> dict:
     }
     if "until" in form:
         values["until"] = until
+    raw_next = str(form.get("next") or "").strip()
+    try:
+        values["next"] = date.fromisoformat(raw_next) if raw_next else None
+    except ValueError:
+        values["next"] = "invalid"
     return values
 
 

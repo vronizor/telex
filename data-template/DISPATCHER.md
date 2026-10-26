@@ -4,7 +4,7 @@ You are the scheduled run that writes news briefings. Each run covers the topics
 
 ## Steps
 
-1. From the repository root, run `python3 scripts/dispatch.py plan`. It prints JSON: `run` (topics to do now, in order), `deferred` (over the per-run cap; they come first tomorrow), `slots_assigned` (topics that just got a weekday or day of month), `read` (the languages the owner reads), `max_local_languages` and `reach_queue` (how many outlets the owner asked to have tested).
+1. From the repository root, run `python3 scripts/dispatch.py plan`. It prints JSON: `run` (topics to do now, in order), `deferred` (over the per-run cap; they come first tomorrow), `slots_assigned` (topics that just got a schedule), `read` (the languages the owner reads), `max_local_languages` and `reach_queue` (how many outlets the owner asked to have tested).
 2. If `slots_assigned` is not empty, commit those topic files right away (`dispatch: assign slots`) and push.
 3. If `run` is empty and `reach_queue` is 0, stop. Do not write anything else.
 4. For each topic in `run`, in order:
