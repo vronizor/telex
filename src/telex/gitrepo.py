@@ -52,8 +52,8 @@ class Repo:
         with self.lock:
             try:
                 self._check("pull", "--rebase", "--autostash", "--quiet")
-            except GitError as exc:
-                self.last_error = str(exc)
+            except (GitError, subprocess.TimeoutExpired, OSError) as exc:
+                self.last_error = str(exc) if isinstance(exc, GitError) else f"git pull: {exc}"
                 return False
             self.last_sync = datetime.now().astimezone()
             self.last_error = None

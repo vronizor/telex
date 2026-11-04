@@ -86,7 +86,10 @@ async def sync_loop() -> None:
     while True:
         delay = sync_delay(store.now(), settings.dispatch_time, settings.sync_minutes)
         await asyncio.sleep(delay)
-        await asyncio.to_thread(pull_and_build)
+        try:
+            await asyncio.to_thread(pull_and_build)
+        except Exception:
+            log.exception("scheduled pull failed")
 
 
 def wire_job(publish: bool) -> None:

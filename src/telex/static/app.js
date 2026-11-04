@@ -1,3 +1,18 @@
+(() => {
+  const STALE_MS = 10 * 60 * 1000;
+  const loadedAt = Date.now();
+  let edited = false;
+  document.addEventListener("input", () => { edited = true; });
+  const reloadIfStale = () => {
+    if (document.visibilityState !== "visible" || edited) return;
+    if (Date.now() - loadedAt < STALE_MS) return;
+    if ([...document.querySelectorAll("audio")].some((a) => !a.paused)) return;
+    location.reload();
+  };
+  document.addEventListener("visibilitychange", reloadIfStale);
+  window.addEventListener("pageshow", (event) => { if (event.persisted) reloadIfStale(); });
+})();
+
 document.addEventListener("DOMContentLoaded", () => {
   const root = document.documentElement;
   const toggle = document.querySelector("[data-theme-toggle]");
