@@ -21,4 +21,4 @@
 This repo may be public. Never commit hostnames, tailnet names, IPs, usernames, topics or reports (use placeholders like `<you>`). Real topics and reports belong in the private data repo only.
 
 ## Deployment
-The owner deploys with `git pull && docker compose up -d --build` on the Pi. Give exact commands plus what to expect, and ask for the output.
+The Pi deploys release tags on its own: pushing to main deploys nothing; a new `vX.Y` tag on main is built and checked within 5 minutes, and rolled back if it fails. Tag only when the owner asks for a release. Don't tell the owner to `git pull` on the Pi; by hand it is `deploy telex [REF]`. When `data-template/` changes, copy it to the data repo and push there before tagging: the app loads `dispatch.py` from the data repo.

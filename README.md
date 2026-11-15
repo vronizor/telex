@@ -50,7 +50,7 @@ After the reports, the dispatcher writes `shows/<date>.md`, a spoken script of t
 
 ## Deploy updates
 
-`git pull && docker compose up -d --build` on the Pi. This builds both containers; the `tts` image is large (about 1 GB with the Kokoro model and spaCy) and its first build takes a while. Changes to `data-template/` do not reach the data repo by themselves: copy `DISPATCHER.md` or `scripts/dispatch.py` over and commit there.
+Push a release tag (`git tag v1.1 && git push origin v1.1`): the Pi deploys it within 5 minutes and rolls back if it doesn't come up (`deploy telex` does it at once). This builds both containers; the `tts` image is large (about 1 GB with the Kokoro model and spaCy) and its first build takes a while. Changes to `data-template/` do not reach the data repo by themselves: copy `DISPATCHER.md` or `scripts/dispatch.py` over and commit there.
 
 ## Develop
 
