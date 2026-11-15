@@ -412,7 +412,7 @@ class Wire:
                 path.unlink()
         return counts
 
-    def for_topic(self, topic_id: str, since: date | None, limit: int = TOPIC_PAGE_LIMIT):
+    def for_topic(self, topic_id: str, since: date | None, limit: int | None = TOPIC_PAGE_LIMIT):
         d = self.store.d
         items = [
             i

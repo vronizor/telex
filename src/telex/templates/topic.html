@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import tag, sched, counts %}
+{% from "_macros.html" import tag, sched, counts, dot %}
 {% block title %}{{ topic.title }} · Telex{% endblock %}
 {% block content %}
 <a class="back label" href="/">← All topics</a>
@@ -63,11 +63,11 @@
 
 {% if wire_items %}
 <details class="wire">
-  <summary class="label">On the wire{% if wire_since %} since {{ wire_since | short_date(today) }}{% endif %} · {{ wire_total }}</summary>
+  <summary class="label">On the wire{% if wire_since %} since {{ wire_since | short_date(today) }}{% endif %} · {{ wire_total }}{% if wire_fresh %} · <span class="wire-new">{{ wire_fresh | length }} new</span>{% endif %}</summary>
   <ul class="wire-list">
     {% for i in wire_items %}
-    <li>
-      <a href="{{ i.url }}" target="_blank" rel="noopener">{{ i.title }}</a>
+    <li{% if i.url in wire_fresh %} class="is-new"{% endif %}>
+      <a href="{{ i.url }}" target="_blank" rel="noopener">{% if i.url in wire_fresh %}{{ dot() }} {% endif %}{{ i.title }}</a>
       <span class="label muted">{{ i.domain }} · {{ i.seen[8:10] }}.{{ i.seen[5:7] }} {{ i.seen[11:16] }}</span>
     </li>
     {% endfor %}
@@ -82,7 +82,7 @@
   <div class="history">
     {% for r in history %}
     <a class="history-row{% if report and r.day == report.day %} is-current{% endif %}" href="/t/{{ topic.id }}/r/{{ r.day.isoformat() }}">
-      <span class="label">{{ r.day.strftime("%d.%m.%y") }}</span>
+      <span class="label">{% if r.day in was_unread and not (report and r.day == report.day) %}{{ dot() }} {% endif %}{{ r.day.strftime("%d.%m.%y") }}</span>
       <span class="history-headline">{{ r.headline or r.status }}</span>
       <span>{% if r.status == "update" %}{{ counts(r.counts) }}{% else %}{{ tag(r.status) }}{% endif %}</span>
     </a>

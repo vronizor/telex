@@ -20,11 +20,13 @@
   --add: #1f5fbf;
   --add-soft: #eaf1fb;
   --danger: #b42318;
+  --unread: #e5332a;
   --sans: "Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --radius-sm: 3px;
   --radius: 6px;
   --radius-lg: 8px;
+  --radius-dot: 50%;
   --headline-weight: 600;
   color-scheme: light;
 }
@@ -44,6 +46,7 @@
     --add: #7fb2f0;
     --add-soft: #13233a;
     --danger: #ff8a7a;
+  --unread: #ff5a4e;
     color-scheme: dark;
   }
 }
@@ -62,5 +65,6 @@
   --add: #7fb2f0;
   --add-soft: #13233a;
   --danger: #ff8a7a;
+  --unread: #ff5a4e;
   color-scheme: dark;
 }

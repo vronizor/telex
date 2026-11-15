@@ -22,6 +22,7 @@ from telex import edition
 from telex.config import get_settings
 from telex.gitrepo import GitError, Repo
 from telex.radio import library as radio
+from telex.reads import Reads, is_new
 from telex.store import Store, Topic, chat_prompt, full_text, pointer_prompt, report_path
 from telex.wire import Wire, discover
 from telex.wire import next_run as wire_next_run
@@ -32,8 +33,6 @@ templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.globals["static_version"] = hashlib.sha256(
     b"".join(p.read_bytes() for p in sorted(STATIC_DIR.rglob("*.*")))
 ).hexdigest()[:10]
-SEEN_COOKIE = "telex_seen"
-SEEN_GRACE = timedelta(hours=1)
 DISPATCH_PULLS = (15, 25, 40, 60)
 ORDER = {"update": 0, "baseline": 1, "pending": 2, "quiet": 3, "paused": 4}
 log = logging.getLogger("telex")
@@ -60,6 +59,7 @@ settings = get_settings()
 repo = Repo(settings.checkout, settings.repo_url, settings.git_name, settings.git_email)
 store = Store(settings)
 wire = Wire(settings.data_dir, store)
+reads = Reads(settings.data_dir, store.now)
 
 
 def refresh_edition() -> None:
@@ -144,44 +144,67 @@ def theme_name() -> str:
     )
 
 
+def unread_days(topic: Topic) -> list[date]:
+    after = reads.report_read(topic.id)
+    days = []
+    for day in topic.report_days:
+        if day <= after:
+            continue
+        latest = topic.latest
+        report = latest if latest and day == latest.day else store.report(topic.id, day)
+        if report is not None and report.status != "quiet":
+            days.append(day)
+    return days
+
+
+def wire_new(topic: Topic) -> int:
+    since = topic.latest.day if topic.latest else None
+    seen = reads.wire_seen(topic.id)
+    items, _ = wire.for_topic(topic.id, since, limit=None)
+    return sum(is_new(i, seen) for i in items)
+
+
+def show_mark(show: radio.Show | None) -> str | None:
+    if show is None or show.state != "ready":
+        return None
+    state = reads.show(show.day)
+    return None if state == "done" else "started" if state == "started" else "unread"
+
+
+def badges(topics: list[Topic] | None = None, show: radio.Show | None = None) -> dict:
+    topics = store.topics() if topics is None else topics
+    show = home_show(store.now().date()) if show is None else show
+    return {
+        "reports": any(unread_days(t) for t in topics),
+        "radio": show_mark(show) == "unread",
+        "radio_day": show.day if show else None,
+    }
+
+
 def render(request: Request, name: str, status_code: int = 200, **context) -> HTMLResponse:
     now = store.now()
+    if "badges" not in context:
+        context["badges"] = badges()
     context.update(
         request=request, now=now, today=now.date(), repo=repo, settings=settings, theme=theme_name()
     )
     return templates.TemplateResponse(request, name, context, status_code=status_code)
 
 
-def read_seen(request: Request, now: datetime) -> tuple[datetime | None, str]:
-    since, last = None, None
-    raw = request.cookies.get(SEEN_COOKIE, "")
-    with suppress(ValueError):
-        a, b = raw.split("|")
-        since, last = datetime.fromisoformat(a), datetime.fromisoformat(b)
-    if last is None:
-        return None, f"{now.isoformat()}|{now.isoformat()}"
-    if now - last > SEEN_GRACE:
-        since = last
-    return since, f"{since.isoformat()}|{now.isoformat()}"
-
-
-def report_time(day: date) -> datetime:
-    return datetime.combine(day, settings.dispatch_time, settings.timezone)
-
-
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
     now = store.now()
-    since, cookie = read_seen(request, now)
     topics = store.topics()
+    unread = {t.id for t in topics if unread_days(t)}
+    on_wire = {t.id: n for t in topics if (n := wire_new(t))}
     fresh, earlier, quiet, waiting = [], [], [], []
     for t in topics:
-        if t.state in ("quiet",):
+        if t.id in unread:
+            fresh.append(t)
+        elif t.state == "quiet":
             quiet.append(t)
         elif t.state in ("pending", "paused"):
             waiting.append(t)
-        elif since is not None and report_time(t.latest.day) > since:
-            fresh.append(t)
         else:
             earlier.append(t)
     newest_first = lambda t: (t.latest.day if t.latest else date.min, t.title)  # noqa: E731
@@ -191,11 +214,17 @@ def index(request: Request):
     upcoming = sorted((t for t in topics if t.next_run), key=lambda t: (t.next_run, t.title))
     last_report = max((t.latest.day for t in topics if t.latest), default=None)
     show = home_show(now.date())
-    response = render(
+    return render(
         request,
         "index.html",
+        badges={
+            "reports": bool(unread),
+            "radio": show_mark(show) == "unread",
+            "radio_day": show.day if show else None,
+        },
         topics=topics,
-        since=since,
+        unread=unread,
+        on_wire=on_wire,
         fresh=fresh,
         earlier=earlier,
         quiet=quiet,
@@ -206,12 +235,21 @@ def index(request: Request):
         next_dispatch=store.next_dispatch(now),
         latest_edition=next(iter(edition.list_editions(settings, limit=1)), None),
         show=show,
+        show_mark=show_mark(show),
         chapters=chapter_links(show) if show else [],
         next_edition=edition.edition_day_for(now, settings) + timedelta(days=7),
         **form_context(None, NEW_TOPIC),
     )
-    response.set_cookie(SEEN_COOKIE, cookie, max_age=400 * 86400, samesite="lax", httponly=True)
-    return response
+
+
+@app.post("/read/all")
+def mark_all_read():
+    now = store.now()
+    for t in store.topics():
+        if t.latest:
+            reads.mark_report(t.id, t.latest.day)
+        reads.mark_wire(t.id, now)
+    return RedirectResponse("/", status_code=303)
 
 
 def topic_or_404(topic_id: str) -> Topic:
@@ -234,8 +272,14 @@ def topic_view(request: Request, topic: Topic, report):
         )
         chat_url = "https://claude.ai/new?q=" + quote(prompt, safe="")
         copy_text = full_text(topic.title, report)
+    was_unread = set(unread_days(topic))
+    if report is not None:
+        reads.mark_report(topic.id, report.day)
     wire_since = topic.latest.day if topic.latest else None
     wire_items, wire_total = wire.for_topic(topic.id, wire_since)
+    seen = reads.wire_seen(topic.id)
+    wire_fresh = {i["url"] for i in wire_items if is_new(i, seen)}
+    reads.mark_wire(topic.id, store.now())
     return render(
         request,
         "topic.html",
@@ -247,6 +291,8 @@ def topic_view(request: Request, topic: Topic, report):
         wire_items=wire_items,
         wire_total=wire_total,
         wire_since=wire_since,
+        wire_fresh=wire_fresh,
+        was_unread=was_unread,
     )
 
 
@@ -638,6 +684,19 @@ def radio_shows(today: date) -> list[radio.Show]:
     return radio.recent_shows(settings.checkout, settings.data_dir, today, settings.radio_keep_days)
 
 
+@app.post("/radio/{day}/played")
+async def radio_played(request: Request, day: date):
+    form = await request.form()
+    state = str(form.get("state", ""))
+    if state not in ("started", "done"):
+        raise HTTPException(400, "state must be started or done")
+    if radio.show_state(settings.checkout, settings.data_dir, day) is None:
+        raise HTTPException(404, "No show for that day")
+    reads.mark_show(day, state)
+    reads.forget_shows_before(store.now().date() - timedelta(days=settings.radio_keep_days + 7))
+    return Response(status_code=204)
+
+
 def home_show(today: date) -> radio.Show | None:
     shows = [s for s in radio_shows(today) if s.day >= today - timedelta(days=1)]
     return shows[0] if shows else None
@@ -686,6 +745,7 @@ def radio_page(request: Request, day: date | None):
         "radio.html",
         show=show,
         shows=shows,
+        marks={s.day: show_mark(s) for s in shows},
         chapters=chapter_links(show) if show else [],
         script=show_script(show.day) if show else [],
     )

@@ -22,12 +22,23 @@
 </span>
 {%- endmacro %}
 
-{% macro item(t, today) -%}
-<a class="item" href="/t/{{ t.id }}">
+{% macro dot(kind="unread", show=none) -%}
+<span class="dot{% if kind == 'started' %} dot-started{% endif %}" role="img" aria-label="{{ 'Started' if kind == 'started' else 'Unread' }}"
+  {%- if show %} data-show-dot="{{ show }}"{% endif %}></span>
+{%- endmacro %}
+
+{% macro wire_count(n) -%}
+{%- if n %}<span class="wire-new">{{ n }} new on wire</span>{% endif -%}
+{%- endmacro %}
+
+{% macro item(t, today, unread=false, on_wire=0) -%}
+<a class="item{% if unread %} is-unread{% endif %}" href="/t/{{ t.id }}">
   <div class="item-meta label">
+    {% if unread %}{{ dot() }}{% endif %}
     {{ tag(t.state) }}
     {% if t.latest %}<span>{{ t.latest.day | short_date(today) }}</span>{% endif %}
     {% if t.queued %}<span class="tag tag-queued">REQ</span>{% endif %}
+    {{ wire_count(on_wire) }}
     <span class="push">{{ sched(t) }}</span>
   </div>
   <div class="item-topic">{{ t.title }}</div>

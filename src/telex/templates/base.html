@@ -34,8 +34,8 @@
 {% set section = "radio" if request.url.path.startswith("/radio") else "sources" if request.url.path.startswith("/sources") else "reports" %}
 <nav class="tabs" aria-label="Sections">
   <div class="tabs-inner">
-    <a class="tab label" href="/"{% if section == "reports" %} aria-current="page"{% endif %}>Reports</a>
-    <a class="tab label" href="/radio"{% if section == "radio" %} aria-current="page"{% endif %}>Radio</a>
+    <a class="tab label" href="/"{% if section == "reports" %} aria-current="page"{% endif %}>Reports{% if badges.reports %}<span class="dot" role="img" aria-label="Unread"></span>{% endif %}</a>
+    <a class="tab label" href="/radio"{% if section == "radio" %} aria-current="page"{% endif %}>Radio{% if badges.radio %}<span class="dot" role="img" aria-label="Unread" data-show-dot="{{ badges.radio_day }}" data-tab-dot></span>{% endif %}</a>
     <a class="tab label" href="/sources"{% if section == "sources" %} aria-current="page"{% endif %}>Sources</a>
   </div>
 </nav>

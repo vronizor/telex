@@ -125,6 +125,23 @@ document.addEventListener("DOMContentLoaded", () => {
     let current = -1;
     let lastSaved = 0;
     let dragging = false;
+    let reported = "";
+
+    const report = (state) => {
+      if (reported === state || reported === "done") return;
+      reported = state;
+      const day = player.dataset.day;
+      fetch(`/radio/${day}/played`, { method: "POST", body: new URLSearchParams({ state }), keepalive: true })
+        .catch(() => {});
+      document.querySelectorAll(`[data-show-dot="${day}"]`).forEach((dot) => {
+        if (state === "done" || dot.hasAttribute("data-tab-dot")) {
+          dot.remove();
+        } else {
+          dot.classList.add("dot-started");
+          dot.setAttribute("aria-label", "Started");
+        }
+      });
+    };
 
     const chapterAt = (t) => {
       let index = 0;
@@ -164,6 +181,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         setMetadata();
       }
+      if (!dragging && isFinite(audio.duration) && t >= audio.duration * 0.95) report("done");
       if (Math.abs(t - lastSaved) >= 5) {
         lastSaved = t;
         saved.set(key, String(Math.floor(t)));
@@ -199,6 +217,7 @@ document.addEventListener("DOMContentLoaded", () => {
     audio.addEventListener("timeupdate", update);
     audio.addEventListener("ratechange", setPosition);
     audio.addEventListener("play", () => {
+      report("started");
       playIcon.hidden = true;
       pauseIcon.hidden = false;
       playButton.setAttribute("aria-label", "Pause");
@@ -212,7 +231,10 @@ document.addEventListener("DOMContentLoaded", () => {
       saved.set(key, String(Math.floor(audio.currentTime)));
       if (session) session.playbackState = "paused";
     });
-    audio.addEventListener("ended", () => saved.set(key, "done"));
+    audio.addEventListener("ended", () => {
+      saved.set(key, "done");
+      report("done");
+    });
 
     playButton.addEventListener("click", () => (audio.paused ? audio.play() : audio.pause()));
     player.querySelector("[data-prev]").addEventListener("click", previous);

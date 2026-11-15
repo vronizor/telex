@@ -14,7 +14,7 @@ def test_index_lists_topics(client):
     assert "Paris cycling network" in r.text
     assert "1 quiet" in r.text
     assert 'class="c-add">+2' in r.text
-    assert "telex_seen" in r.headers["set-cookie"]
+    assert "Unread" not in r.text
 
 
 def test_topic_page_renders_diff(client):

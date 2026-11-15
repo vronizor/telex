@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import item, sched, tag, DAYS %}
+{% from "_macros.html" import item, sched, tag, dot, wire_count, DAYS %}
 {% from "_radio.html" import player %}
 {% block content %}
 <p class="statusline label">
@@ -11,6 +11,7 @@
 {% if show %}
 <section class="radio-strip" aria-label="Telex Radio">
   <a class="radio-head label" href="/radio/{{ show.day }}">
+    {% if show_mark %}{{ dot(show_mark, show.day) }}{% endif %}
     <span>Radio · {{ show.day | short_date(today) }}</span>
     {% if show.state == "ready" %}<span class="muted">{{ show.minutes }} min</span>
     {% elif show.state == "recording" %}<span class="muted">recording…</span>
@@ -42,15 +43,18 @@
 
 {% if fresh %}
 <section>
-  <h2 class="section-label label">── New since {{ since.astimezone(settings.timezone).strftime("%a %H:%M") }}</h2>
-  {% for t in fresh %}{{ item(t, today) }}{% endfor %}
+  <div class="section-head">
+    <h2 class="section-label label">── Unread · {{ fresh | length }}</h2>
+    <form method="post" action="/read/all"><button class="btn-link label" type="submit">Mark all read</button></form>
+  </div>
+  {% for t in fresh %}{{ item(t, today, unread=true, on_wire=on_wire.get(t.id, 0)) }}{% endfor %}
 </section>
 {% endif %}
 
 {% if earlier %}
 <section>
   <h2 class="section-label label">── {% if fresh %}Earlier{% else %}Latest{% endif %}</h2>
-  {% for t in earlier %}{{ item(t, today) }}{% endfor %}
+  {% for t in earlier %}{{ item(t, today, on_wire=on_wire.get(t.id, 0)) }}{% endfor %}
 </section>
 {% endif %}
 
@@ -60,7 +64,7 @@
   {% for t in quiet %}
   <a class="quiet-row" href="/t/{{ t.id }}">
     <span>{{ t.title }}</span>
-    <span class="label muted">{{ t.latest.day | short_date(today) }} · {{ sched(t) }}</span>
+    <span class="label muted">{% if on_wire.get(t.id) %}{{ wire_count(on_wire[t.id]) }} · {% endif %}{{ t.latest.day | short_date(today) }} · {{ sched(t) }}</span>
   </a>
   {% endfor %}
 </details>

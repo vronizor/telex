@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_radio.html" import player, clock %}
+{% from "_macros.html" import dot %}
 {% block title %}Telex Radio{% if show %} · {{ show.day.strftime("%a %d %b") }}{% endif %}{% endblock %}
 {% block content %}
 
@@ -65,7 +66,7 @@
 <div class="history">
   {% for s in shows %}
   <a class="history-row{% if show and s.day == show.day %} is-current{% endif %}" href="/radio/{{ s.day }}" data-played-day="{{ s.day }}">
-    <span class="label">{{ s.day | short_date(today) }}</span>
+    <span class="label">{% if marks[s.day] %}{{ dot(marks[s.day], s.day) }} {% endif %}{{ s.day | short_date(today) }}</span>
     <span class="history-headline">{{ s.day.strftime("%A %d %B") }}</span>
     <span class="label muted" data-played>{% if s.state == "ready" %}{{ s.minutes }} min{% elif s.state == "recording" %}recording{% else %}failed{% endif %}</span>
   </a>
