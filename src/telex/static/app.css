@@ -149,6 +149,7 @@ h1, h2, p { margin: 0; }
 .tag-update { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .tag-baseline { background: var(--ink); border-color: var(--ink); color: var(--bg); }
 .tag-queued { border-color: var(--add); color: var(--add); }
+.tag-catchup { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 
 .counts { display: inline-flex; gap: 8px; font-size: 13px; letter-spacing: 0; }
 .c-add { color: var(--add); }
@@ -385,6 +386,11 @@ h1, h2, p { margin: 0; }
 .radio-strip { margin: 0 0 20px; padding: 10px 12px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
 .radio-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-height: 32px; text-decoration: none; color: var(--ink); }
 .radio-head .push { color: var(--muted); }
+.radio-special { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 6px; }
+.radio-strip > .radio-special:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
+.catchup-box { display: flex; flex-direction: column; gap: 4px; border-left: 3px solid var(--accent); }
+.catchup-box .radio-head { min-height: 40px; }
+.report h3 { margin: 22px 0 6px; font-size: 18px; line-height: 1.3; font-weight: var(--headline-weight); }
 .player { display: flex; flex-direction: column; gap: 6px; margin-top: 16px; }
 .player-compact { margin-top: 6px; }
 .player-row { display: flex; align-items: center; gap: 4px; }

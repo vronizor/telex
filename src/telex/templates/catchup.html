@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ "Edit " ~ topic.title if topic else "Catch me up" }} · Telex{% endblock %}
+{% block content %}
+<a class="back label" href="{{ '/t/' ~ topic.id if topic else '/' }}">← {{ "Back" if topic else "All topics" }}</a>
+<h1 class="headline">{{ "Edit catch-up" if topic else "Catch me up" }}</h1>
+<p class="notice">A one-off look back: where things stand, the storylines that got them there, and who's who. You can keep following it afterwards.</p>
+
+{% if error %}<p class="notice is-error" role="alert">{{ error }}</p>{% endif %}
+
+{% include "_catchup_form.html" %}
+{% endblock %}

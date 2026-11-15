@@ -26,6 +26,10 @@ The app fetches the RSS feeds listed per outlet in `sources.toml` every hour, ke
 
 After the reports, the dispatcher writes `shows/<date>.md`, a spoken script of the day's reports (format and rules in `DISPATCHER.md`, checked by `dispatch.py check-show`). A second container, `tts`, records it on the Pi with Kokoro into `$TELEX_HOST_DATA_DIR/audio/` (not in git, kept 14 days), and the app plays it from the home page and `/radio`, with chapters per topic and lock-screen controls. A show takes about as long to record as to play. Design and operation: `docs/radio.md`.
 
+## Catch-ups
+
+"Catch me up" on the home page asks for a one-off look back at a subject over a period ("UK politics since the July 2024 election"). The next run writes a cited catch-up report organised by storylines, then a spoken special of about eight minutes (`specials/<date>-<topic>.md`, checked by `dispatch.py check-special`) that the Pi records like the morning show. "Keep following" turns it into a normal topic. Design: `docs/catchup.md`.
+
 ## Set up
 
 1. Create two GitHub repositories: `telex` (this code) and `telex-data` (**private**).

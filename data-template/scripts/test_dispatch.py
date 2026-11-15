@@ -1,5 +1,6 @@
 import tomllib
 from datetime import date, timedelta
+from pathlib import Path
 
 import dispatch as d
 import pytest
@@ -590,3 +591,139 @@ def test_watch_and_wire_commands(root, monkeypatch, capsys):
     capsys.readouterr()
     assert d.main(["wire", "a"]) == 0
     assert '"items": 0' in capsys.readouterr().out
+
+
+def catchup(id, **extra):
+    return topic(id, "weekly", catchup=True, window="since the 2024 election", **extra)
+
+
+def test_catchup_round_trips_and_follow_drops_it(root):
+    d.write_topic(root, catchup("uk"))
+    raw = (root / "topics" / "uk.toml").read_text()
+    assert "catchup = true" in raw and 'window = "since the 2024 election"' in raw
+    t = next(t for t in d.load_topics(root) if t["id"] == "uk")
+    assert t["catchup"] and t["window"] == "since the 2024 election"
+    d.write_topic(root, {**topic("uk", "weekly"), "brief": "edited"})
+    assert next(t for t in d.load_topics(root) if t["id"] == "uk")["catchup"]
+    d.write_topic(root, {**topic("uk", "weekly"), "catchup": False})
+    t = next(t for t in d.load_topics(root) if t["id"] == "uk")
+    assert not t["catchup"] and t["window"] == ""
+    assert "window" not in (root / "topics" / "uk.toml").read_text()
+
+
+def test_catchup_runs_once_unless_queued(root):
+    t = catchup("uk")
+    d.write_topic(root, t)
+    assert d.is_due(root, t, THU)
+    assert d.forecast(root, THU, 3) == [["uk"], [], []]
+    add_status(root, "uk", THU, "catchup")
+    later = THU + timedelta(days=60)
+    assert not d.is_due(root, t, later)
+    assert d.forecast(root, later, 3) == [[], [], []]
+    (root / "queue" / "uk").touch()
+    assert d.is_due(root, t, later)
+
+
+def test_plan_keeps_catchups_apart_one_per_run(root):
+    d.write_topic(root, topic("weekly", "weekly", 3))
+    d.write_topic(root, catchup("uk", created=date(2026, 10, 1)))
+    d.write_topic(root, catchup("de", created=date(2026, 10, 5)))
+    result = d.plan(root, THU)
+    assert [r["id"] for r in result["run"]] == ["weekly"]
+    assert [c["id"] for c in result["catchup"]] == ["uk"]
+    assert result["catchups_deferred"] == ["de"]
+    first = result["catchup"][0]
+    assert first["kind"] == "catchup" and first["special"] == f"specials/{THU}-uk.md"
+    assert "uk" not in result["slots_assigned"]
+    assert "anchor" not in (root / "topics" / "uk.toml").read_text()
+
+
+GOOD_SPECIAL = """+++
+date = 2026-10-25
+topic = "uk"
+title = "UK politics since the election"
++++
+
+## intro
+
+{intro}
+
+## story: The government's slide
+
+{body}
+
+## story: Reform's rise
+
+{body}
+
+## story: The leadership question
+
+{body}
+
+## cast
+
+Keir Starmer is the prime minister. Kemi Badenoch leads the Conservatives.
+
+## outro
+
+Watch the May elections. Left out of this episode: Scotland and Wales.
+"""
+SENTENCE = "The party lost ground in every poll over the summer, and its ministers said so. "
+
+
+def special_text(**kw):
+    return GOOD_SPECIAL.format(intro="This is a Telex catch-up.", body=SENTENCE * 20, **kw)
+
+
+def write_special(root, text, name="2026-10-25-uk"):
+    (root / "specials").mkdir(exist_ok=True)
+    path = root / "specials" / f"{name}.md"
+    path.write_text(text)
+    return path
+
+
+def test_parse_special_segments():
+    special = d.parse_special(special_text())
+    assert special["topic"] == "uk" and special["date"] == date(2026, 10, 25)
+    assert [(s["kind"], s["title"]) for s in special["segments"]] == [
+        ("intro", ""),
+        ("story", "The government's slide"),
+        ("story", "Reform's rise"),
+        ("story", "The leadership question"),
+        ("cast", ""),
+        ("outro", ""),
+    ]
+
+
+def test_check_special_accepts_a_good_special(root):
+    add_status(root, "uk", date(2026, 10, 25), "catchup")
+    result = d.check_special(root, write_special(root, special_text()))
+    assert result["ok"], result["problems"]
+    assert d.special_key(Path("specials/2026-10-25-uk.md")) == (date(2026, 10, 25), "uk")
+
+
+def test_check_special_problems(root):
+    path = write_special(root, special_text())
+    assert any("no catch-up report" in p for p in d.check_special(root, path)["problems"])
+    add_status(root, "uk", date(2026, 10, 25), "catchup")
+    text = special_text().replace("## story: Reform's rise", "## Reform's rise")
+    text = text.replace("## cast", "## story: The government's slide")
+    problems = d.check_special(root, write_special(root, text))["problems"]
+    assert any("unknown segment" in p for p in problems)
+    assert any("appears more than once" in p for p in problems)
+    long = special_text().replace(SENTENCE * 20, SENTENCE * 30, 1)
+    problems = d.check_special(root, write_special(root, long))["problems"]
+    assert any("limit is 380" in p for p in problems)
+    short = GOOD_SPECIAL.format(intro="Hi.", body="Short story with 4% growth.")
+    problems = d.check_special(root, write_special(root, short))["problems"]
+    assert any("at least" in p for p in problems)
+    assert any("not spoken words: 4%" in p for p in problems)
+    assert d.check_special(root, write_special(root, special_text(), "uk"))["ok"] is False
+
+
+def test_check_show_rejects_catchup_segments(show_root):
+    add_status(show_root, "uk", date(2026, 10, 25), "catchup")
+    assert d.check_show(show_root, write_show(show_root, GOOD_SHOW))["ok"]
+    text = GOOD_SHOW.replace("## outro", "## uk\n\nThe catch-up is ready.\n\n## outro")
+    problems = d.check_show(show_root, write_show(show_root, text))["problems"]
+    assert any("is a catch-up" in p for p in problems)

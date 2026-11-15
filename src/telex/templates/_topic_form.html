@@ -1,4 +1,5 @@
 <form class="topic-form" method="post" action="{{ '/t/' ~ topic.id ~ '/edit' if topic else '/new' }}">
+  {% if follow %}<input type="hidden" name="follow" value="1">{% endif %}
   <label class="field">
     <span class="label">Topic</span>
     <input name="title" type="text" required maxlength="80" value="{{ values.title }}" placeholder="Swiss pension reform" autocomplete="off">
@@ -55,7 +56,7 @@
     <span class="hint label">Matched against feed headlines in any language. Whole words; a & b needs both; word* matches the start. The run updates these after each report.</span>
   </label>
 
-  {% if topic %}
+  {% if topic and not follow %}
   <label class="check">
     <input type="checkbox" name="active" {% if values.active %}checked{% endif %}>
     <span>Active — untick to pause without losing history</span>
@@ -68,5 +69,5 @@
      data-current="{{ current_next }}"
      data-new="{{ '' if topic else '1' }}">{{ preview }}</p>
 
-  <button class="btn btn-primary btn-wide" type="submit">{{ "Save" if topic else "Add topic" }}</button>
+  <button class="btn btn-primary btn-wide" type="submit">{{ "Keep following" if follow else "Save" if topic else "Add topic" }}</button>
 </form>

@@ -13,9 +13,9 @@
 {%- endmacro %}
 
 {% macro player(show, chapters, compact=false) -%}
-<div class="player{% if compact %} player-compact{% endif %}" data-player data-day="{{ show.day }}"
-  data-album="Telex Radio · {{ show.day.strftime('%a %d %b') }}" data-chapters="{{ chapters | tojson | forceescape }}">
-  <audio preload="metadata" src="/radio/{{ show.day }}.mp3?v={{ show.digest }}"></audio>
+<div class="player{% if compact %} player-compact{% endif %}" data-player data-day="{{ show.key }}"
+  data-album="{% if show.special %}Telex catch-up · {{ show.title }}{% else %}Telex Radio · {{ show.day.strftime('%a %d %b') }}{% endif %}" data-chapters="{{ chapters | tojson | forceescape }}">
+  <audio preload="metadata" src="/radio/{{ show.key }}.mp3?v={{ show.digest }}"></audio>
   <div class="player-row">
     <button class="player-btn" type="button" data-prev aria-label="Previous topic">{{ icon("prev") }}</button>
     <button class="player-btn player-play" type="button" data-play aria-label="Play">

@@ -41,6 +41,8 @@ class Report:
     searched: list[str] = field(default_factory=list)
     contested: str = ""
     unreachable: list[str] = field(default_factory=list)
+    window: str = ""
+    period_start: date | None = None
 
 
 def source_map(text: str) -> dict[str, str]:
@@ -121,6 +123,7 @@ def parse_report(path: Path, topic_id: str) -> Report:
     for mark in MARK_RE.findall(body):
         counts[MARKS[mark]] += 1
     since = meta.get("since")
+    period_start = meta.get("period_start")
     preamble, sections = split_sections(body)
     story = next((text for head, text in sections if head.lower() == STORY), "")
     rest = preamble + "".join(text for head, text in sections if head.lower() != STORY)
@@ -139,6 +142,8 @@ def parse_report(path: Path, topic_id: str) -> Report:
         searched=[str(x) for x in meta.get("searched", []) if isinstance(x, str)],
         contested=str(meta.get("contested", "")).strip(),
         unreachable=[str(x) for x in meta.get("unreachable", []) if isinstance(x, str)],
+        window=str(meta.get("window", "")).strip(),
+        period_start=period_start if isinstance(period_start, date) else None,
     )
 
 
@@ -160,6 +165,8 @@ class Topic:
     every: int = 1
     until: date | None = None
     watch: list[str] = field(default_factory=list)
+    catchup: bool = False
+    window: str = ""
 
     @property
     def search_label(self) -> str:
@@ -298,12 +305,15 @@ class Store:
         until = raw.get("until") if isinstance(raw.get("until"), date) else None
         ended = until is not None and now.date() > until
         active = raw.get("active", True) and not ended
+        catchup = bool(raw.get("catchup"))
         if not active:
             next_run = None
         elif d.is_due(self.root, raw, now.date()):
             next_run = self.next_dispatch(now)
         else:
-            next_run = d.next_due(raw, days[-1])
+            next_run = None if catchup else d.next_due(raw, days[-1])
+        schedule = d.describe_schedule(raw["cadence"], raw.get("slot"), d.every(raw))
+        schedule += f", until {until.day} {until:%b}" if until else ""
         return Topic(
             id=raw["id"],
             title=raw["title"],
@@ -313,8 +323,7 @@ class Store:
             extra_languages=list(raw.get("extra_languages", [])),
             active=active,
             brief=raw.get("brief", ""),
-            schedule=d.describe_schedule(raw["cadence"], raw.get("slot"), d.every(raw))
-            + (f", until {until.day} {until:%b}" if until else ""),
+            schedule="one-off catch-up" if catchup else schedule,
             queued=d.is_queued(self.root, raw["id"]),
             report_days=days,
             latest=latest,
@@ -322,6 +331,8 @@ class Store:
             every=d.every(raw),
             until=until,
             watch=list(raw.get("watch", [])),
+            catchup=catchup,
+            window=str(raw.get("window", "")),
         )
 
     def topics(self) -> list[Topic]:
@@ -374,6 +385,7 @@ class Store:
         data["created"] = previous.get("created") if previous else self.now().date()
         same = (
             previous is not None
+            and not previous.get("catchup")
             and previous["cadence"] == data["cadence"]
             and d.every(previous) == d.every(data)
         )
@@ -389,6 +401,24 @@ class Store:
                 anchor = d.pick_anchor(self.root, others, data, start, earliest)
             data = d.with_anchor(data, anchor)
         path = d.write_topic(self.root, data)
+        return str(path.relative_to(self.root))
+
+    def save_catchup(self, data: dict, previous: dict | None = None) -> str:
+        """A one-off catch-up: no schedule, a window in the owner's words, an optional angle."""
+        topic = {
+            "id": data["id"],
+            "title": data["title"],
+            "cadence": previous["cadence"] if previous else "weekly",
+            "brief": data.get("brief", ""),
+            "catchup": True,
+            "window": data.get("window", ""),
+            "local": previous.get("local", True) if previous else True,
+            "active": True,
+            "created": previous.get("created") if previous else self.now().date(),
+        }
+        if previous and previous.get("extra_languages"):
+            topic["extra_languages"] = previous["extra_languages"]
+        path = self.d.write_topic(self.root, topic)
         return str(path.relative_to(self.root))
 
     def sources(self, weeks: int = 6) -> tuple[list[Outlet], list[WeekShare]]:

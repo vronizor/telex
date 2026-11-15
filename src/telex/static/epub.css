@@ -20,3 +20,4 @@ li.src-row { list-style: none; margin: 0 0 0.6em -1.2em; padding-left: 4.5em; te
 .toc-title a { color: #000; text-decoration: none; }
 .toc-head { margin: 0; }
 .quiet-line { margin: 0 0 0.4em; }
+.story-h { font-size: 1em; font-weight: bold; margin: 1.2em 0 0.3em; }

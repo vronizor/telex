@@ -17,6 +17,7 @@ CADENCES = ("daily", "weekly", "monthly")
 WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 LANGUAGES = ("en", "fr", "es", "ca", "de", "it")
 MAX_PER_RUN = 4
+MAX_CATCHUPS_PER_RUN = 1
 MAX_LOCAL = 3
 MAX_REACH_PER_RUN = 10
 REACH_COLUMNS = ("domain", "search", "reach", "note")
@@ -44,6 +45,8 @@ def load_topics(root: Path = ROOT) -> list[dict]:
         data.setdefault("local", True)
         data["extra_languages"] = list(data.get("extra_languages", []))
         data["watch"] = clean_watch(data.get("watch", []))
+        data["catchup"] = data.get("catchup") is True
+        data["window"] = str(data.get("window", "")).strip() if data["catchup"] else ""
         data.pop("languages", None)
         topics.append(data)
     return topics
@@ -507,6 +510,8 @@ def due_on(topic: dict, day: date, last: date | None, queued: bool = False) -> b
         return False
     if queued or last is None:
         return True
+    if topic.get("catchup"):
+        return False
     if anchor_of(topic) is None:
         return day >= legacy_next_due(topic, last)
     return day >= next_due(topic, last)
@@ -529,6 +534,10 @@ def forecast(
         dates = report_dates(root, t["id"])
         last = dates[-1] if dates else None
         queued = is_queued(root, t["id"])
+        if t.get("catchup"):
+            if queued or last is None:
+                out[0].append(t["id"])
+            continue
         due = start if queued or last is None else next_due(t, last)
         while (due - start).days < days and not has_ended(t, max(due, start)):
             day = max(due, start)
@@ -603,7 +612,11 @@ def anchor_error(topic: dict, anchor: date, start: date) -> str | None:
 
 def rebalance(root: Path, start: date, apply: bool = False) -> list[dict]:
     """Move topics whose schedule can make the busiest coming days lighter, most frequent first."""
-    topics = [t for t in load_topics(root) if t.get("active", True) and not has_ended(t, start)]
+    topics = [
+        t
+        for t in load_topics(root)
+        if t.get("active", True) and not has_ended(t, start) and not t["catchup"]
+    ]
     topics.sort(key=lambda t: (period_days(t["cadence"], every(t)), t["id"]))
     moves = []
     for t in topics:
@@ -636,7 +649,7 @@ def slot_loads(topics: list[dict], cadence: str) -> list[int]:
     loads = [0] * size
     for t in topics:
         live = t.get("active", True) and not has_ended(t, today_local())
-        if live and t["cadence"] == cadence and t.get("slot") is not None:
+        if live and t["cadence"] == cadence and t.get("slot") is not None and not t.get("catchup"):
             index = t["slot"] if cadence == "weekly" else t["slot"] - 1
             if 0 <= index < size:
                 loads[index] += 1
@@ -700,6 +713,10 @@ def dump_topic(topic: dict) -> str:
         f"active = {'true' if topic.get('active', True) else 'false'}",
         f"created = {topic.get('created') or today_local()}",
     ]
+    if topic.get("catchup"):
+        lines.append("catchup = true")
+        if str(topic.get("window", "")).strip():
+            lines.append(f"window = {json.dumps(str(topic['window']).strip(), ensure_ascii=False)}")
     if topic.get("extra_languages"):
         lines.append(f"extra_languages = {json.dumps(list(topic['extra_languages']))}")
     if watch := clean_watch(topic.get("watch")):
@@ -723,10 +740,13 @@ def write_topic(root: Path, topic: dict) -> Path:
     if path.exists():
         with path.open("rb") as f:
             old = tomllib.load(f)
-        topic = {**{k: old[k] for k in ("until", "every", "watch") if k in old}, **topic}
+        kept = ("until", "every", "watch", "catchup", "window")
+        topic = {**{k: old[k] for k in kept if k in old}, **topic}
         same = old.get("cadence") == topic["cadence"] and every(old) == every(topic)
         if "anchor" not in topic and same and anchor_of(old) is not None:
             topic = with_anchor(topic, anchor_of(old))
+    if not topic.get("catchup"):
+        topic.pop("window", None)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(dump_topic(topic), encoding="utf-8")
     return path
@@ -737,7 +757,7 @@ def assign_missing_slots(root: Path, today: date | None = None) -> list[str]:
     today = today or today_local()
     changed = []
     for t in load_topics(root):
-        if anchor_of(t) is not None:
+        if anchor_of(t) is not None or t["catchup"]:
             continue
         dates = report_dates(root, t["id"])
         if t["cadence"] != "daily" and t.get("slot") is None:
@@ -754,11 +774,27 @@ def assign_missing_slots(root: Path, today: date | None = None) -> list[str]:
 
 def plan(root: Path, today: date, limit: int = MAX_PER_RUN) -> dict:
     assigned = assign_missing_slots(root, today)
-    due = []
+    due, catchups = [], []
     for t in load_topics(root):
         if not is_due(root, t, today):
             continue
         dates = report_dates(root, t["id"])
+        if t["catchup"]:
+            catchups.append(
+                {
+                    "id": t["id"],
+                    "title": t["title"],
+                    "window": t["window"] or "the last six months",
+                    "local": t["local"],
+                    "extra_languages": t["extra_languages"],
+                    "queued": is_queued(root, t["id"]),
+                    "previous_report": f"reports/{t['id']}/{dates[-1]}.md" if dates else None,
+                    "kind": "catchup",
+                    "special": f"{SPECIALS}/{today}-{t['id']}.md",
+                    "_order": (not is_queued(root, t["id"]), str(t.get("created", "")), t["id"]),
+                }
+            )
+            continue
         due.append(
             {
                 "id": t["id"],
@@ -773,6 +809,7 @@ def plan(root: Path, today: date, limit: int = MAX_PER_RUN) -> dict:
             }
         )
     due.sort(key=lambda d: d.pop("_order"))
+    catchups.sort(key=lambda d: d.pop("_order"))
     return {
         "today": today.isoformat(),
         "read": load_reader(root)["read"],
@@ -781,6 +818,8 @@ def plan(root: Path, today: date, limit: int = MAX_PER_RUN) -> dict:
         "slots_assigned": assigned,
         "run": due[:limit],
         "deferred": [d["id"] for d in due[limit:]],
+        "catchup": catchups[:MAX_CATCHUPS_PER_RUN],
+        "catchups_deferred": [d["id"] for d in catchups[MAX_CATCHUPS_PER_RUN:]],
     }
 
 
@@ -837,12 +876,11 @@ def parse_segment_heading(heading: str) -> dict:
     return {"kind": "topic", "topics": [heading]}
 
 
-def parse_show(text: str) -> dict:
-    meta, body = read_front_matter(text)
+def split_segments(body: str, parse_heading) -> list[dict]:
     segments, preamble = [], []
     for line in body.splitlines():
         if line.startswith("## "):
-            segments.append({**parse_segment_heading(line[3:]), "lines": []})
+            segments.append({**parse_heading(line[3:]), "lines": []})
         elif segments:
             segments[-1]["lines"].append(line)
         elif line.strip():
@@ -852,6 +890,12 @@ def parse_show(text: str) -> dict:
     for seg in segments:
         paragraphs = re.split(r"\n\s*\n", "\n".join(seg.pop("lines")).strip())
         seg["paragraphs"] = [" ".join(p.split()) for p in paragraphs if p.strip()]
+    return segments
+
+
+def parse_show(text: str) -> dict:
+    meta, body = read_front_matter(text)
+    segments = split_segments(body, parse_segment_heading)
     day = meta.get("date")
     return {"date": day if isinstance(day, date) else None, "segments": segments}
 
@@ -877,6 +921,24 @@ def unspeakable(text: str) -> list[str]:
     return bad
 
 
+def spoken_problems(label: str, paragraphs: list[str]) -> list[str]:
+    problems = []
+    bad = unspeakable(" ".join(paragraphs))
+    if bad:
+        shown = ", ".join(dict.fromkeys(bad[:8]))
+        problems.append(f"[{label}] has characters that are not spoken words: {shown}")
+    for paragraph in paragraphs:
+        if re.match(r"^([-*>•]|\d+[.)])\s", paragraph):
+            problems.append(f"[{label}] has a list or quote line; write prose")
+        for sentence in SENTENCE_SPLIT.split(paragraph):
+            if words(sentence) > MAX_SENTENCE_WORDS:
+                problems.append(
+                    f"[{label}] has a {words(sentence)}-word sentence; split it: "
+                    f"{' '.join(sentence.split()[:8])}…"
+                )
+    return problems
+
+
 def check_show(root: Path, path: Path) -> dict:
     problems: list[str] = []
     try:
@@ -900,12 +962,15 @@ def check_show(root: Path, path: Path) -> dict:
     if kinds.count("quiet") > 1:
         problems.append("put every quiet topic in a single '## quiet: a, b' segment")
 
-    expected = reports_on(root, day)
+    found = reports_on(root, day)
+    expected = {k: v for k, v in found.items() if v != "catchup"}
     seen: list[str] = []
     for seg in segments:
         for topic_id in seg["topics"]:
             status = expected.get(topic_id)
-            if status is None:
+            if found.get(topic_id) == "catchup":
+                problems.append(f"'{topic_id}' is a catch-up: it gets a special, not a segment")
+            elif status is None:
                 problems.append(f"'{topic_id}' has no report dated {day}")
             elif seg["kind"] == "quiet" and status != "quiet":
                 problems.append(f"'{topic_id}' is not quiet ({status}): give it its own segment")
@@ -935,21 +1000,111 @@ def check_show(root: Path, path: Path) -> dict:
             limit = SHOW_LIMITS[seg["kind"]]
         if n > limit:
             problems.append(f"[{label}] has {n} words; the limit is {limit}")
-        bad = unspeakable(text)
-        if bad:
-            shown = ", ".join(dict.fromkeys(bad[:8]))
-            problems.append(f"[{label}] has characters that are not spoken words: {shown}")
-        for paragraph in seg["paragraphs"]:
-            if re.match(r"^([-*>•]|\d+[.)])\s", paragraph):
-                problems.append(f"[{label}] has a list or quote line; write prose")
-            for sentence in SENTENCE_SPLIT.split(paragraph):
-                if words(sentence) > MAX_SENTENCE_WORDS:
-                    problems.append(
-                        f"[{label}] has a {words(sentence)}-word sentence; split it: "
-                        f"{' '.join(sentence.split()[:8])}…"
-                    )
+        problems += spoken_problems(label, seg["paragraphs"])
     if total > SHOW_LIMITS["total"]:
         problems.append(f"the show has {total} words; the limit is {SHOW_LIMITS['total']}")
+    return {"ok": not problems, "problems": problems, "words": total}
+
+
+SPECIALS = "specials"
+SPECIAL_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-([a-z0-9][a-z0-9-]{0,59})$")
+SPECIAL_LIMITS = {"intro": 120, "story": 380, "cast": 160, "outro": 120, "total": 1300}
+SPECIAL_MIN_WORDS = 800
+SPECIAL_STORIES = (3, 5)
+
+
+def special_key(path: Path) -> tuple[date, str] | None:
+    m = SPECIAL_RE.match(path.stem)
+    if not m:
+        return None
+    try:
+        return date.fromisoformat(m.group(1)), m.group(2)
+    except ValueError:
+        return None
+
+
+def parse_special_heading(heading: str) -> dict:
+    heading = heading.strip()
+    if heading in ("intro", "outro", "cast"):
+        return {"kind": heading, "topics": [], "title": ""}
+    if heading.startswith("story:") and heading.removeprefix("story:").strip():
+        return {"kind": "story", "topics": [], "title": heading.removeprefix("story:").strip()}
+    return {"kind": "unknown", "topics": [], "title": heading}
+
+
+def parse_special(text: str) -> dict:
+    meta, body = read_front_matter(text)
+    day = meta.get("date")
+    return {
+        "date": day if isinstance(day, date) else None,
+        "topic": str(meta.get("topic", "")),
+        "title": str(meta.get("title", "")).strip(),
+        "segments": split_segments(body, parse_special_heading),
+    }
+
+
+def load_special(path: Path) -> dict:
+    return parse_special(path.read_text(encoding="utf-8"))
+
+
+def check_special(root: Path, path: Path) -> dict:
+    key = special_key(path)
+    if key is None:
+        return {"ok": False, "problems": [f"file name must be {SPECIALS}/YYYY-MM-DD-<topic>.md"]}
+    day, topic_id = key
+    if not path.exists():
+        return {"ok": False, "problems": [f"no special at {path}"]}
+    try:
+        special = load_special(path)
+    except ShowError as exc:
+        return {"ok": False, "problems": [str(exc)]}
+    problems: list[str] = []
+    if special["date"] != day:
+        problems.append(f"front matter needs date = {day}")
+    if special["topic"] != topic_id:
+        problems.append(f'front matter needs topic = "{topic_id}"')
+    if not special["title"]:
+        problems.append("front matter needs a title")
+    if report_status(root, topic_id, day) != "catchup":
+        problems.append(f"no catch-up report at reports/{topic_id}/{day}.md")
+    segments = special["segments"]
+    kinds = [s["kind"] for s in segments]
+    for seg in segments:
+        if seg["kind"] == "unknown":
+            problems.append(
+                f"unknown segment '## {seg['title']}': use intro, story: <title>, cast or outro"
+            )
+    if not kinds or kinds[0] != "intro" or kinds.count("intro") != 1:
+        problems.append("the special must open with exactly one '## intro'")
+    if not kinds or kinds[-1] != "outro" or kinds.count("outro") != 1:
+        problems.append("the special must end with exactly one '## outro'")
+    if kinds.count("cast") > 1:
+        problems.append("at most one '## cast' segment")
+    elif "cast" in kinds and kinds[-2:] != ["cast", "outro"]:
+        problems.append("put '## cast' right before the outro")
+    lo, hi = SPECIAL_STORIES
+    stories = kinds.count("story")
+    if not lo <= stories <= hi:
+        problems.append(f"tell {lo} to {hi} storylines ('## story: <title>'), not {stories}")
+    titles = [s["title"] for s in segments if s["kind"] == "story"]
+    for title in sorted({t for t in titles if titles.count(t) > 1}):
+        problems.append(f"storyline '{title}' appears more than once")
+    total = 0
+    for seg in segments:
+        label = seg["title"] or seg["kind"]
+        n = words(" ".join(seg["paragraphs"]))
+        total += n
+        if not n:
+            problems.append(f"[{label}] is empty")
+            continue
+        limit = SPECIAL_LIMITS.get(seg["kind"])
+        if limit and n > limit:
+            problems.append(f"[{label}] has {n} words; the limit is {limit}")
+        problems += spoken_problems(label, seg["paragraphs"])
+    if total > SPECIAL_LIMITS["total"]:
+        problems.append(f"the special has {total} words; the limit is {SPECIAL_LIMITS['total']}")
+    elif total < SPECIAL_MIN_WORDS:
+        problems.append(f"the special has {total} words; aim for at least {SPECIAL_MIN_WORDS}")
     return {"ok": not problems, "problems": problems, "words": total}
 
 
@@ -974,6 +1129,8 @@ def main(argv: list[str] | None = None) -> int:
     p_fc.add_argument("--today", type=date.fromisoformat, default=None)
     p_show = sub.add_parser("check-show")
     p_show.add_argument("file", type=Path, nargs="?")
+    p_special = sub.add_parser("check-special")
+    p_special.add_argument("file", type=Path)
     p_watch = sub.add_parser("watch")
     p_watch.add_argument("topic_id")
     p_watch.add_argument("terms", nargs="*")
@@ -983,8 +1140,11 @@ def main(argv: list[str] | None = None) -> int:
     p_wire.add_argument("--since", type=date.fromisoformat, default=None)
     p_wire.add_argument("--all", action="store_true")
     args = parser.parse_args(argv)
-    if args.cmd == "check-show":
-        result = check_show(ROOT, args.file or ROOT / "shows" / f"{today_local()}.md")
+    if args.cmd in ("check-show", "check-special"):
+        if args.cmd == "check-show":
+            result = check_show(ROOT, args.file or ROOT / "shows" / f"{today_local()}.md")
+        else:
+            result = check_special(ROOT, args.file)
         json.dump(result, sys.stdout, indent=2, ensure_ascii=False)
         print()
         return 0 if result["ok"] else 1

@@ -71,20 +71,28 @@ class Reads:
     def mark_wire(self, topic_id: str, when: datetime) -> None:
         self._set("wire", topic_id, when.isoformat(timespec="seconds"))
 
-    def show(self, day: date) -> str | None:
+    def show(self, key: date | str) -> str | None:
+        """A morning show is keyed by its date, a special by 'specials/<date>-<topic>'."""
+        key = key.isoformat() if isinstance(key, date) else key
+        try:
+            day = date.fromisoformat(key.removeprefix("specials/")[:10])
+        except ValueError:
+            return None
         if day <= self.baseline.date():
             return "done"
-        return self.state["shows"].get(day.isoformat())
+        return self.state["shows"].get(key)
 
-    def mark_show(self, day: date, state: str) -> None:
-        if state not in SHOW_STATES or self.show(day) in (state, "done"):
+    def mark_show(self, key: date | str, state: str) -> None:
+        if state not in SHOW_STATES or self.show(key) in (state, "done"):
             return
-        self._set("shows", day.isoformat(), state)
+        self._set("shows", key.isoformat() if isinstance(key, date) else key, state)
 
     def forget_shows_before(self, day: date) -> None:
         state = self.state
         with self.lock:
-            old = [k for k in state["shows"] if k < day.isoformat()]
+            old = [
+                k for k in state["shows"] if not k.startswith("specials/") and k < day.isoformat()
+            ]
             for k in old:
                 del state["shows"][k]
             if old:

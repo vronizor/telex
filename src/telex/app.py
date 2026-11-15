@@ -34,7 +34,9 @@ templates.env.globals["static_version"] = hashlib.sha256(
     b"".join(p.read_bytes() for p in sorted(STATIC_DIR.rglob("*.*")))
 ).hexdigest()[:10]
 DISPATCH_PULLS = (15, 25, 40, 60)
-ORDER = {"update": 0, "baseline": 1, "pending": 2, "quiet": 3, "paused": 4}
+ORDER = {"update": 0, "baseline": 1, "catchup": 2, "pending": 3, "quiet": 4, "paused": 5}
+WINDOWS = ("the last three months", "the last six months", "the last year", "the last two years")
+DEFAULT_WINDOW = "the last six months"
 log = logging.getLogger("telex")
 
 
@@ -167,18 +169,21 @@ def wire_new(topic: Topic) -> int:
 def show_mark(show: radio.Show | None) -> str | None:
     if show is None or show.state != "ready":
         return None
-    state = reads.show(show.day)
+    state = reads.show(show.key if show.special else show.day)
     return None if state == "done" else "started" if state == "started" else "unread"
+
+
+def radio_badge(show: radio.Show | None) -> dict:
+    if show_mark(show) == "unread":
+        return {"radio": True, "radio_day": show.key}
+    special = next((s for s in specials() if show_mark(s) == "unread"), None)
+    return {"radio": special is not None, "radio_day": special.key if special else None}
 
 
 def badges(topics: list[Topic] | None = None, show: radio.Show | None = None) -> dict:
     topics = store.topics() if topics is None else topics
     show = home_show(store.now().date()) if show is None else show
-    return {
-        "reports": any(unread_days(t) for t in topics),
-        "radio": show_mark(show) == "unread",
-        "radio_day": show.day if show else None,
-    }
+    return {"reports": any(unread_days(t) for t in topics), **radio_badge(show)}
 
 
 def render(request: Request, name: str, status_code: int = 200, **context) -> HTMLResponse:
@@ -197,10 +202,12 @@ def index(request: Request):
     topics = store.topics()
     unread = {t.id for t in topics if unread_days(t)}
     on_wire = {t.id: n for t in topics if (n := wire_new(t))}
-    fresh, earlier, quiet, waiting = [], [], [], []
+    fresh, earlier, quiet, waiting, caught_up = [], [], [], [], []
     for t in topics:
         if t.id in unread:
             fresh.append(t)
+        elif t.catchup and t.state == "catchup":
+            caught_up.append(t)
         elif t.state == "quiet":
             quiet.append(t)
         elif t.state in ("pending", "paused"):
@@ -208,20 +215,20 @@ def index(request: Request):
         else:
             earlier.append(t)
     newest_first = lambda t: (t.latest.day if t.latest else date.min, t.title)  # noqa: E731
-    for group in (fresh, earlier, quiet):
+    for group in (fresh, earlier, quiet, caught_up):
         group.sort(key=newest_first, reverse=True)
     waiting.sort(key=lambda t: (ORDER[t.state], t.title))
     upcoming = sorted((t for t in topics if t.next_run), key=lambda t: (t.next_run, t.title))
     last_report = max((t.latest.day for t in topics if t.latest), default=None)
     show = home_show(now.date())
+    fresh_specials = [s for s in specials() if show_mark(s) == "unread"]
     return render(
         request,
         "index.html",
-        badges={
-            "reports": bool(unread),
-            "radio": show_mark(show) == "unread",
-            "radio_day": show.day if show else None,
-        },
+        badges={"reports": bool(unread), **radio_badge(show)},
+        fresh_specials=fresh_specials[:3],
+        special_marks={s.key: show_mark(s) for s in fresh_specials},
+        caught_up=caught_up,
         topics=topics,
         unread=unread,
         on_wire=on_wire,
@@ -239,6 +246,7 @@ def index(request: Request):
         chapters=chapter_links(show) if show else [],
         next_edition=edition.edition_day_for(now, settings) + timedelta(days=7),
         **form_context(None, NEW_TOPIC),
+        **catchup_context(dict(NEW_CATCHUP)),
     )
 
 
@@ -280,9 +288,16 @@ def topic_view(request: Request, topic: Topic, report):
     seen = reads.wire_seen(topic.id)
     wire_fresh = {i["url"] for i in wire_items if is_new(i, seen)}
     reads.mark_wire(topic.id, store.now())
+    special = None
+    if report is not None and report.status == "catchup":
+        special = radio.show_state(
+            settings.checkout, settings.data_dir, f"{radio.SPECIALS}/{report.day}-{topic.id}"
+        )
     return render(
         request,
         "topic.html",
+        special=special,
+        special_mark=show_mark(special),
         topic=topic,
         report=report,
         history=history,
@@ -337,15 +352,31 @@ def describe_next(cadence: str, every: int, day: date | None, new: bool) -> str:
     return f"{rhythm[0].upper()}{rhythm[1:]}; next {day:%a %d %b}"
 
 
-def form_context(topic: Topic | None, values: dict) -> dict:
+@app.get("/t/{topic_id}/follow", response_class=HTMLResponse)
+def follow_topic(request: Request, topic_id: str):
+    t = topic_or_404(topic_id)
+    if not t.catchup:
+        return RedirectResponse(f"/t/{topic_id}/edit", status_code=303)
+    values = {
+        **NEW_TOPIC,
+        "title": t.title,
+        "brief": t.brief,
+        "local": t.local,
+        "extra_languages": t.extra_languages,
+        "watch": t.watch,
+    }
+    return form_page(request, t, values, follow=True)
+
+
+def form_context(topic: Topic | None, values: dict, follow: bool = False) -> dict:
     d = store.d
     start = store.next_dispatch(store.now())
     suggestions = store.suggestions(start, exclude=topic.id if topic else None)
     until = values.get("until") if isinstance(values.get("until"), date) else None
     every = values["every"] if isinstance(values["every"], int) and values["every"] > 0 else 1
     chosen = values.get("next") if isinstance(values.get("next"), date) else None
-    original = f"{topic.cadence}:{topic.every}" if topic else ""
-    current = topic.next_run if topic and topic.next_run else None
+    original = f"{topic.cadence}:{topic.every}" if topic and not follow else ""
+    current = topic.next_run if topic and topic.next_run and not follow else None
     key = f"{values['cadence']}:{every}"
     if chosen:
         day = chosen
@@ -359,6 +390,7 @@ def form_context(topic: Topic | None, values: dict) -> dict:
         preview += f", until {until.day} {until:%b}" if until else ""
     return {
         "topic": topic,
+        "follow": follow,
         "values": values,
         "suggestions": suggestions,
         "original_key": original,
@@ -373,14 +405,83 @@ def form_context(topic: Topic | None, values: dict) -> dict:
     }
 
 
-def form_page(request: Request, topic: Topic | None, values: dict, error: str | None = None):
+def form_page(
+    request: Request,
+    topic: Topic | None,
+    values: dict,
+    error: str | None = None,
+    follow: bool = False,
+):
     return render(
         request,
         "form.html",
         error=error,
         status_code=400 if error else 200,
-        **form_context(topic, values),
+        **form_context(topic, values, follow),
     )
+
+
+NEW_CATCHUP = {"title": "", "window": "", "brief": ""}
+
+
+def catchup_context(values: dict) -> dict:
+    return {"catchup_values": values, "windows": WINDOWS, "default_window": DEFAULT_WINDOW}
+
+
+def catchup_page(request: Request, topic: Topic | None, values: dict, error: str | None = None):
+    return render(
+        request,
+        "catchup.html",
+        topic=topic,
+        error=error,
+        status_code=400 if error else 200,
+        **catchup_context(values),
+    )
+
+
+async def read_catchup_form(request: Request) -> tuple[dict, str | None]:
+    form = await request.form()
+    values = {
+        "title": " ".join(str(form.get("title", "")).split()),
+        "window": " ".join(str(form.get("window", "")).split()),
+        "brief": str(form.get("brief", "")).replace("\r\n", "\n").strip(),
+    }
+    error = None
+    if not values["title"]:
+        error = "Say what you want to catch up on."
+    elif len(values["title"]) > 80:
+        error = "Keep the subject under 80 characters."
+    elif len(values["window"]) > 80:
+        error = "Keep the period under 80 characters."
+    elif len(values["brief"]) > 2000:
+        error = "Keep the angle under 2000 characters."
+    values["window"] = values["window"] or DEFAULT_WINDOW
+    return values, error
+
+
+def save_catchup(request: Request, topic: Topic | None, values: dict):
+    previous = next(t for t in store.raw_topics() if t["id"] == topic.id) if topic else None
+    values["id"] = topic.id if topic else store.unique_id(values["title"])
+    try:
+        path = store.save_catchup(values, previous)
+        verb = "edit" if topic else "add"
+        repo.commit_and_push([path], f"catchup: {verb} {values['id']}")
+    except (GitError, ValueError) as exc:
+        return catchup_page(request, topic, values, error=f"Could not save: {exc}")
+    return RedirectResponse(f"/t/{values['id']}", status_code=303)
+
+
+@app.get("/catchup", response_class=HTMLResponse)
+def new_catchup(request: Request):
+    return catchup_page(request, None, dict(NEW_CATCHUP))
+
+
+@app.post("/catchup")
+async def create_catchup(request: Request):
+    values, error = await read_catchup_form(request)
+    if error:
+        return catchup_page(request, None, values, error)
+    return save_catchup(request, None, values)
 
 
 @app.get("/new", response_class=HTMLResponse)
@@ -391,6 +492,9 @@ def new_topic(request: Request):
 @app.get("/t/{topic_id}/edit", response_class=HTMLResponse)
 def edit_topic(request: Request, topic_id: str):
     t = topic_or_404(topic_id)
+    if t.catchup:
+        values = {"title": t.title, "window": t.window, "brief": t.brief}
+        return catchup_page(request, t, values)
     values = {
         "title": t.title,
         "brief": t.brief,
@@ -497,9 +601,19 @@ async def create_topic(request: Request):
 @app.post("/t/{topic_id}/edit")
 async def update_topic(request: Request, topic_id: str):
     topic = topic_or_404(topic_id)
+    form = await request.form()
+    follow = topic.catchup and form.get("follow") == "1"
+    if topic.catchup and not follow:
+        values, error = await read_catchup_form(request)
+        if error:
+            return catchup_page(request, topic, values, error)
+        return save_catchup(request, topic, values)
     values = await read_form(request)
+    if follow:
+        values["catchup"] = False
+        values["active"] = True
     if error := validate(values):
-        return form_page(request, topic, values, error)
+        return form_page(request, topic, values, error, follow=follow)
     return save(request, topic, values)
 
 
@@ -684,6 +798,10 @@ def radio_shows(today: date) -> list[radio.Show]:
     return radio.recent_shows(settings.checkout, settings.data_dir, today, settings.radio_keep_days)
 
 
+def specials(topic: str | None = None) -> list[radio.Show]:
+    return radio.specials(settings.checkout, settings.data_dir, topic)
+
+
 @app.post("/radio/{day}/played")
 async def radio_played(request: Request, day: date):
     form = await request.form()
@@ -697,12 +815,33 @@ async def radio_played(request: Request, day: date):
     return Response(status_code=204)
 
 
+def special_or_404(stem: str) -> radio.Show:
+    show = radio.show_state(settings.checkout, settings.data_dir, f"{radio.SPECIALS}/{stem}")
+    if show is None:
+        raise HTTPException(404, "No such special")
+    return show
+
+
+@app.post("/radio/specials/{stem}/played")
+async def special_played(request: Request, stem: str):
+    form = await request.form()
+    state = str(form.get("state", ""))
+    if state not in ("started", "done"):
+        raise HTTPException(400, "state must be started or done")
+    reads.mark_show(special_or_404(stem).key, state)
+    return Response(status_code=204)
+
+
 def home_show(today: date) -> radio.Show | None:
     shows = [s for s in radio_shows(today) if s.day >= today - timedelta(days=1)]
     return shows[0] if shows else None
 
 
 def chapter_links(show: radio.Show) -> list[dict]:
+    if show.special:
+        return [
+            {"start": c.start, "title": c.title, "kind": c.kind, "links": []} for c in show.chapters
+        ]
     return [
         {
             "start": c.start,
@@ -717,14 +856,20 @@ def chapter_links(show: radio.Show) -> list[dict]:
     ]
 
 
-def show_script(day: date) -> list[dict]:
-    path = radio.shows_dir(settings.checkout) / f"{day}.md"
+def show_script(day: radio.Key) -> list[dict]:
+    path = radio.script_path(settings.checkout, day)
     if not path.exists():
         return []
     try:
-        segments = store.d.load_show(path)["segments"]
+        load = store.d.load_special if radio.is_special(day) else store.d.load_show
+        segments = load(path)["segments"]
     except (ValueError, AttributeError):
         return []
+    if radio.is_special(day):
+        names = {"intro": "Intro", "cast": "Who's who", "outro": "Outro"}
+        for seg in segments:
+            seg["title"] = seg["title"] or names.get(seg["kind"], seg["kind"])
+        return segments
     titles = {t.id: t.title for t in store.topics()}
     for seg in segments:
         names = [titles.get(t, t) for t in seg["topics"]]
@@ -734,21 +879,41 @@ def show_script(day: date) -> list[dict]:
     return segments
 
 
-def radio_page(request: Request, day: date | None):
+def radio_page(request: Request, day: date | None, special: radio.Show | None = None):
     today = store.now().date()
     shows = radio_shows(today)
     show = next((s for s in shows if s.day == day), None) if day else next(iter(shows), None)
     if day and show is None:
         raise HTTPException(404, "No show for that day")
+    show = special or show
+    extras = specials()
+    marks = {s.key: show_mark(s) for s in [*shows, *extras]}
+    titles = {t.id: t.title for t in store.topics()}
     return render(
         request,
         "radio.html",
         show=show,
         shows=shows,
-        marks={s.day: show_mark(s) for s in shows},
+        specials=extras,
+        marks=marks,
+        titles=titles,
         chapters=chapter_links(show) if show else [],
-        script=show_script(show.day) if show else [],
+        script=show_script(show.key if show.special else show.day) if show else [],
     )
+
+
+@app.get("/radio/specials/{stem}.mp3")
+def special_audio(stem: str):
+    show = special_or_404(stem)
+    path = radio.audio_dir(settings.data_dir) / f"{show.key}.mp3"
+    if not path.exists():
+        raise HTTPException(404, "No audio for that special")
+    return FileResponse(path, media_type="audio/mpeg")
+
+
+@app.get("/radio/specials/{stem}", response_class=HTMLResponse)
+def special_page(request: Request, stem: str):
+    return radio_page(request, None, special_or_404(stem))
 
 
 @app.get("/radio", response_class=HTMLResponse)

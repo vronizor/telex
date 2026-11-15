@@ -1,22 +1,28 @@
 {% extends "base.html" %}
 {% from "_radio.html" import player, clock %}
 {% from "_macros.html" import dot %}
-{% block title %}Telex Radio{% if show %} · {{ show.day.strftime("%a %d %b") }}{% endif %}{% endblock %}
+{% block title %}Telex Radio{% if show and show.special %} · {{ show.title }}{% elif show %} · {{ show.day.strftime("%a %d %b") }}{% endif %}{% endblock %}
 {% block content %}
 
 {% if not show %}
 <h1 class="headline">No show yet</h1>
 <p class="notice">The dispatcher writes a show after each run that produces reports; it is recorded here a few minutes later.</p>
 {% else %}
+{% if show.special %}
+<p class="label muted">Catch-up · {{ show.day.strftime("%d.%m.%y") }}</p>
+<h1 class="headline">{{ show.title or titles.get(show.topic, show.topic) }}</h1>
+{% else %}
 <h1 class="headline">{{ show.day.strftime("%A %d %B") }}</h1>
+{% endif %}
 <p class="report-meta label">
-  {% if show.state == "ready" %}{{ show.minutes }} min · {{ show.topic_chapters | length }} {{ "segment" if show.topic_chapters | length == 1 else "segments" }}
+  {% if show.state == "ready" and show.special %}{{ show.minutes }} min · {{ show.topic_chapters | length }} storylines · <a href="/t/{{ show.topic }}/r/{{ show.day }}">Read the catch-up →</a>
+  {% elif show.state == "ready" %}{{ show.minutes }} min · {{ show.topic_chapters | length }} {{ "segment" if show.topic_chapters | length == 1 else "segments" }}
   {% elif show.state == "recording" %}Recording…
   {% else %}<span class="is-error">Not recorded</span>{% endif %}
 </p>
 
 {% if show.state == "recording" %}
-<p class="notice">The script is in; the Pi is recording it. A show takes about as long to record as to play.</p>
+<p class="notice">The script is in; the Pi is recording it. It takes about as long to record as to play.</p>
 {% elif show.state == "failed" %}
 <details class="notice contested">
   <summary>The Pi could not record this script.</summary>
@@ -61,13 +67,26 @@
 {% endif %}
 {% endif %}
 
-{% if shows | length > 1 or (shows and not show) %}
+{% if shows | length > 1 or (shows and (not show or show.special)) %}
 <h2 class="section-label label">── Recent shows</h2>
 <div class="history">
   {% for s in shows %}
-  <a class="history-row{% if show and s.day == show.day %} is-current{% endif %}" href="/radio/{{ s.day }}" data-played-day="{{ s.day }}">
-    <span class="label">{% if marks[s.day] %}{{ dot(marks[s.day], s.day) }} {% endif %}{{ s.day | short_date(today) }}</span>
+  <a class="history-row{% if show and s.key == show.key %} is-current{% endif %}" href="/radio/{{ s.day }}" data-played-day="{{ s.key }}">
+    <span class="label">{% if marks[s.key] %}{{ dot(marks[s.key], s.key) }} {% endif %}{{ s.day | short_date(today) }}</span>
     <span class="history-headline">{{ s.day.strftime("%A %d %B") }}</span>
+    <span class="label muted" data-played>{% if s.state == "ready" %}{{ s.minutes }} min{% elif s.state == "recording" %}recording{% else %}failed{% endif %}</span>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if specials %}
+<h2 class="section-label label">── Catch-ups</h2>
+<div class="history">
+  {% for s in specials %}
+  <a class="history-row{% if show and s.key == show.key %} is-current{% endif %}" href="/radio/{{ s.key }}" data-played-day="{{ s.key }}">
+    <span class="label">{% if marks[s.key] %}{{ dot(marks[s.key], s.key) }} {% endif %}{{ s.day.strftime("%d.%m.%y") }}</span>
+    <span class="history-headline">{{ s.title or titles.get(s.topic, s.topic) }}</span>
     <span class="label muted" data-played>{% if s.state == "ready" %}{{ s.minutes }} min{% elif s.state == "recording" %}recording{% else %}failed{% endif %}</span>
   </a>
   {% endfor %}

@@ -8,8 +8,9 @@
   · next run {{ next_dispatch | short_date(today) }} {{ settings.dispatch_time.strftime("%H:%M") }}
 </p>
 
-{% if show %}
+{% if show or fresh_specials %}
 <section class="radio-strip" aria-label="Telex Radio">
+  {% if show %}
   <a class="radio-head label" href="/radio/{{ show.day }}">
     {% if show_mark %}{{ dot(show_mark, show.day) }}{% endif %}
     <span>Radio · {{ show.day | short_date(today) }}</span>
@@ -19,6 +20,14 @@
     <span class="push">Show →</span>
   </a>
   {% if show.state == "ready" %}{{ player(show, chapters, compact=true) }}{% endif %}
+  {% endif %}
+  {% for s in fresh_specials %}
+  <a class="radio-head radio-special label" href="/radio/{{ s.key }}">
+    <span>{{ dot(special_marks[s.key], s.key) }} Catch-up · {{ s.title }}</span>
+    <span class="muted">{{ s.minutes }} min</span>
+    <span class="push">Listen →</span>
+  </a>
+  {% endfor %}
 </section>
 {% endif %}
 
@@ -70,13 +79,25 @@
 </details>
 {% endif %}
 
+{% if caught_up %}
+<details class="quiet">
+  <summary class="label">{{ caught_up | length }} catch-up{{ "s" if caught_up | length != 1 }} · {{ caught_up | map(attribute="title") | join(", ") }}</summary>
+  {% for t in caught_up %}
+  <a class="quiet-row" href="/t/{{ t.id }}">
+    <span>{{ t.title }}</span>
+    <span class="label muted">{{ t.latest.day | short_date(today) }} · {{ t.window }}</span>
+  </a>
+  {% endfor %}
+</details>
+{% endif %}
+
 {% if waiting %}
 <section>
   <h2 class="section-label label">── Waiting</h2>
   {% for t in waiting %}
   <a class="quiet-row" href="/t/{{ t.id }}">
-    <span>{{ tag(t.state) }} {{ t.title }}</span>
-    <span class="label muted">{% if t.next_run %}first report {{ t.next_run | short_date(today) }}{% else %}paused{% endif %}</span>
+    <span>{{ tag("catchup" if t.catchup else t.state) }} {{ t.title }}</span>
+    <span class="label muted">{% if t.next_run %}{{ "due" if t.catchup else "first report" }} {{ t.next_run | short_date(today) }}{% else %}paused{% endif %}</span>
   </a>
   {% endfor %}
 </section>
@@ -89,12 +110,18 @@
     {% for t in upcoming %}
     <span class="label muted">{{ t.next_run | short_date(today) }}</span>
     <a href="/t/{{ t.id }}">{{ t.title }}</a>
-    <span>{% if t.queued %}<span class="tag tag-queued">REQ</span>{% elif not t.latest %}<span class="tag tag-baseline">NEW</span>{% endif %}</span>
+    <span>{% if t.catchup %}{{ tag("catchup") }}{% elif t.queued %}<span class="tag tag-queued">REQ</span>{% elif not t.latest %}<span class="tag tag-baseline">NEW</span>{% endif %}</span>
     {% endfor %}
   </div>
 </section>
 {% endif %}
 {% endif %}
+
+<section id="catchup" class="new-topic">
+  <h2 class="section-label label">── Catch me up</h2>
+  {% set topic = none %}
+  {% include "_catchup_form.html" %}
+</section>
 
 <section id="new" class="new-topic">
   <h2 class="section-label label">── New topic</h2>

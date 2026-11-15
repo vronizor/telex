@@ -17,6 +17,10 @@ app ──▶ home-page player, /radio page
 - **Engine.** Kokoro v1.0 through `kokoro-onnx` 0.6.1, voice `af_heart`, misaki G2P with the espeak fallback (`telex/radio/engine.py`). Anything with `name`, `sample_rate`, `info` and `synth(text) -> float32 array` can replace it. The model files are downloaded at image build and checked against their SHA-256.
 - **App.** A strip on the home page with a compact player for today's or yesterday's show (or "recording…"), and `/radio` with the full player, the running order (each topic links to its report), the script, problems the check found, and the last two weeks. The player uses the Media Session API: lock-screen play/pause, previous/next topic, seek. It remembers the position per show and the playback speed (1×, 1.15×, 1.3×) in the browser.
 
+## Specials
+
+Catch-up specials (`specials/<date>-<topic>.md`) go through the same watcher, renderer and player, keyed `specials/<date>-<topic>`; chapters are the storylines. See `docs/catchup.md`.
+
 ## Measured
 
 - The 25 Oct 2026 test show: 452 words, 181 s of audio (about 150 words a minute, so a full 1,400-word show runs about 9½ minutes). Recorded in 86 s on a 2-core x86 cloud VM; the bake-off measured 0.92× real time on the Pi 5 with 4 threads, so budget about as long to record as to play. Peak memory 1.1 GB.

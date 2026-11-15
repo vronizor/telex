@@ -1,4 +1,4 @@
-{% set TAGS = {"update": "UPD", "baseline": "NEW", "quiet": "QUIET", "pending": "PEND", "paused": "PAUSED"} %}
+{% set TAGS = {"update": "UPD", "baseline": "NEW", "quiet": "QUIET", "pending": "PEND", "paused": "PAUSED", "catchup": "CATCH-UP"} %}
 {% set DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] %}
 
 {% macro tag(state) -%}
@@ -7,7 +7,8 @@
 
 {% macro sched(t) -%}
 {%- set n = t.every if t.every and t.every > 1 else "" -%}
-{%- if t.cadence == "daily" -%}{% if n %}{{ n }}D{% else %}DAILY{% endif %}
+{%- if t.catchup -%}ONCE
+{%- elif t.cadence == "daily" -%}{% if n %}{{ n }}D{% else %}DAILY{% endif %}
 {%- elif t.slot is none -%}{{ n }}{{ "WK" if t.cadence == "weekly" else "MO" }}·?
 {%- elif t.cadence == "weekly" -%}{{ n }}WK·{{ DAYS[t.slot] | upper }}
 {%- else -%}{{ n }}MO·{{ t.slot }}{%- endif -%}
@@ -36,6 +37,7 @@
   <div class="item-meta label">
     {% if unread %}{{ dot() }}{% endif %}
     {{ tag(t.state) }}
+    {% if t.catchup and not t.latest %}{{ tag("catchup") }}{% endif %}
     {% if t.latest %}<span>{{ t.latest.day | short_date(today) }}</span>{% endif %}
     {% if t.queued %}<span class="tag tag-queued">REQ</span>{% endif %}
     {{ wire_count(on_wire) }}

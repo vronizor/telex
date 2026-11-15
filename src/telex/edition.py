@@ -26,13 +26,13 @@ from telex.store import (
 
 log = logging.getLogger(__name__)
 
-FORMAT_VERSION = "4"
+FORMAT_VERSION = "5"
 EDITION_NAME = "Telex Weekly"
 FONTS = Path(__file__).parent / "static" / "fonts"
-TAGS = {"update": "UPD", "baseline": "NEW", "quiet": "QUIET"}
+TAGS = {"update": "UPD", "baseline": "NEW", "catchup": "CATCH-UP", "quiet": "QUIET"}
 DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 LATEST_ONLY = {"where it stands", "watch next"}
-STATE_ORDER = {"update": 0, "baseline": 1, "quiet": 2}
+STATE_ORDER = {"update": 0, "baseline": 1, "catchup": 2, "quiet": 3}
 MAX_COVER_TOPICS = 6
 ITA2 = {
     "A": "11000",
@@ -80,7 +80,7 @@ class TopicWeek:
     @property
     def state(self) -> str:
         statuses = {r.status for r in self.reports}
-        for state in ("update", "baseline"):
+        for state in ("update", "baseline", "catchup"):
             if state in statuses:
                 return state
         return "quiet"
@@ -140,6 +140,8 @@ class Edition:
             parts.append(f"{n['update']} update{'s' if n['update'] != 1 else ''}")
         if n["baseline"]:
             parts.append(f"{n['baseline']} new")
+        if n["catchup"]:
+            parts.append(f"{n['catchup']} catch-up{'s' if n['catchup'] != 1 else ''}")
         if n["quiet"]:
             parts.append(f"{n['quiet']} quiet")
         return " · ".join(parts)
@@ -218,6 +220,7 @@ def report_body(report: Report, latest: bool) -> str:
 
 def as_epub_html(markdown: str, prefix: str, sources: dict[str, str]) -> str:
     html = render_markdown(markdown, anchor_prefix=prefix, sources=sources)
+    html = html.replace("<h3>", '<h4 class="story-h">').replace("</h3>", "</h4>")
     return html.replace("<h2>", '<h3 class="sec">── ').replace("</h2>", "</h3>")
 
 
@@ -337,12 +340,12 @@ def make_cover(edition: Edition) -> bytes:
             d.rectangle(box, fill=0)
             d.text(((box[0] + box[2]) // 2, y), tag, font=mono_small, fill=255, anchor="mm")
         else:
-            d.rectangle(box, outline=0 if t.state == "baseline" else 140, width=3)
+            d.rectangle(box, outline=0 if t.state in ("baseline", "catchup") else 140, width=3)
             d.text(
                 ((box[0] + box[2]) // 2, y),
                 tag,
                 font=mono_small,
-                fill=0 if t.state == "baseline" else 110,
+                fill=0 if t.state in ("baseline", "catchup") else 110,
                 anchor="mm",
             )
         counts = counts_text(t.counts)

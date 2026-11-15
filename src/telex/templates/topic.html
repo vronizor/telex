@@ -18,12 +18,23 @@
   <p class="report-meta label">
     {{ report.day.strftime("%d.%m.%y") }}
     {% if report.since %} · Δ since {{ report.since.strftime("%d.%m") }}{% endif %}
+    {% if report.status == "catchup" and report.period_start %} · since {{ report.period_start.strftime("%d.%m.%y") }}{% endif %}
     {% if report.status == "update" %} · {{ counts(report.counts) }}{% endif %}
     {% if report.sources %} · src {{ report.sources }}{% endif %}
     {% if report.searched %} · {{ report.searched | join(",") }}{% endif %}
   </p>
   {% if report.contested %}
   <p class="notice contested"><span class="label c-contested">Contested</span> {{ report.contested }}</p>
+  {% endif %}
+  {% if report.status == "catchup" %}
+  <div class="notice catchup-box">
+    <span class="label">Catch-up{% if report.window %} · {{ report.window }}{% endif %}</span>
+    {% if special and special.state == "ready" %}
+    <a class="radio-head label" href="/radio/{{ special.key }}">{% if special_mark %}{{ dot(special_mark, special.key) }}{% endif %}<span>Listen to the special</span><span class="muted">{{ special.minutes }} min</span><span class="push">→</span></a>
+    {% elif special %}
+    <p class="label muted">Special {{ "recording…" if special.state == "recording" else "not recorded" }}</p>
+    {% endif %}
+  </div>
   {% endif %}
   {% if report.story_html %}
   <details class="story">
@@ -37,7 +48,8 @@
 {% else %}
   <h1 class="headline">{{ topic.title }}</h1>
   <p class="notice">
-    {% if topic.next_run %}No report yet. The first one comes {{ topic.next_run | short_date(today) }} at {{ settings.dispatch_time.strftime("%H:%M") }}.
+    {% if topic.catchup and topic.next_run %}Catch-up over {{ topic.window or "the last six months" }}. It comes {{ topic.next_run | short_date(today) }}, after the morning reports.
+    {% elif topic.next_run %}No report yet. The first one comes {{ topic.next_run | short_date(today) }} at {{ settings.dispatch_time.strftime("%H:%M") }}.
     {% else %}No report yet, and the topic is paused.{% endif %}
   </p>
 {% endif %}
@@ -49,6 +61,22 @@
 </div>
 {% endif %}
 
+{% if topic.catchup %}
+<div class="actions">
+  {% if topic.latest %}<a class="btn btn-primary" href="/t/{{ topic.id }}/follow">Keep following</a>{% endif %}
+  {% if topic.latest %}
+  <form method="post" action="/t/{{ topic.id }}/refresh">
+    <button class="btn" type="submit" {% if topic.queued %}disabled{% endif %}>
+      {% if topic.queued %}Redo requested{% else %}Redo catch-up{% endif %}
+    </button>
+  </form>
+  {% endif %}
+  <a class="btn" href="/t/{{ topic.id }}/edit">Edit</a>
+</div>
+<p class="hint label">
+  {% if topic.next_run %}Due {{ topic.next_run | short_date(today) }}, after the morning reports{% else %}One-off · redo it any time{% endif %}
+</p>
+{% else %}
 <div class="actions">
   <form method="post" action="/t/{{ topic.id }}/refresh">
     <button class="btn btn-primary" type="submit" {% if topic.queued or not topic.active %}disabled{% endif %}>
@@ -60,6 +88,7 @@
 <p class="hint label">
   {% if topic.next_run %}Next run {{ topic.next_run | short_date(today) }} {{ settings.dispatch_time.strftime("%H:%M") }} · {{ topic.schedule }}{% else %}Paused{% endif %}
 </p>
+{% endif %}
 
 {% if wire_items %}
 <details class="wire">
@@ -91,8 +120,10 @@
 </section>
 {% endif %}
 
+{% if topic.brief %}
 <details class="brief">
-  <summary class="label">Brief · {{ topic.schedule }} · {{ topic.search_label }}</summary>
+  <summary class="label">{{ "Angle" if topic.catchup else "Brief" }} · {{ topic.schedule }} · {{ topic.search_label }}</summary>
   <p>{{ topic.brief }}</p>
 </details>
+{% endif %}
 {% endblock %}

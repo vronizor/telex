@@ -1,0 +1,23 @@
+<form class="topic-form" method="post" action="{{ '/t/' ~ topic.id ~ '/edit' if topic else '/catchup' }}">
+  <label class="field">
+    <span class="label">Catch me up on</span>
+    <input name="title" type="text" required maxlength="80" value="{{ catchup_values.title }}" placeholder="UK politics" autocomplete="off">
+  </label>
+
+  <label class="field">
+    <span class="label">Over</span>
+    <input name="window" type="text" maxlength="80" list="catchup-windows" value="{{ catchup_values.window }}" placeholder="{{ default_window }}" autocomplete="off">
+    <datalist id="catchup-windows">
+      {% for w in windows %}<option value="{{ w }}">{% endfor %}
+    </datalist>
+    <span class="hint label">A span or an event: "since the July 2024 election"</span>
+  </label>
+
+  <label class="field">
+    <span class="label">Angle (optional)</span>
+    <textarea name="brief" rows="2" maxlength="2000" placeholder="What I care about most within it">{{ catchup_values.brief }}</textarea>
+  </label>
+
+  <p class="preview label">One written catch-up and an 8-minute special, at the next run</p>
+  <button class="btn btn-primary btn-wide" type="submit">{{ "Save" if topic else "Catch me up" }}</button>
+</form>

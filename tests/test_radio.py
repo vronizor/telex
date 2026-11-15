@@ -142,3 +142,93 @@ def test_render_with_a_fake_engine(checkout):
     stored = json.loads((library.audio_dir(data_dir) / f"{DAY}.json").read_text())
     assert stored["duration"] == meta["duration"]
     assert library.show_state(checkout, data_dir, DAY).state == "ready"
+
+
+SPECIAL = """+++
+date = 2026-10-25
+topic = "uk"
+title = "UK politics"
++++
+
+## intro
+
+A catch-up.
+
+## story: First thread
+
+One.
+
+## story: Second thread
+
+Two.
+
+## story: Third thread
+
+Three.
+
+## cast
+
+People.
+
+## outro
+
+Bye.
+"""
+
+
+def write_special(checkout, age_s=60):
+    folder = checkout / "specials"
+    folder.mkdir(exist_ok=True)
+    path = folder / "2026-10-25-uk.md"
+    path.write_text(SPECIAL)
+    old = time.time() - age_s
+    os.utime(path, (old, old))
+    (checkout / "reports" / "uk").mkdir(parents=True, exist_ok=True)
+    (checkout / "reports" / "uk" / f"{DAY}.md").write_text('+++\nstatus = "catchup"\n+++\n')
+    return path
+
+
+def test_specials_are_pending_kept_and_pruned_with_their_script(checkout):
+    data_dir = checkout.parent
+    path = write_special(checkout)
+    [(key, digest)] = watch.pending_specials(checkout, data_dir)
+    assert key == "specials/2026-10-25-uk" and digest == library.digest(path)
+    assert library.script_path(checkout, key) == path
+    library.write_meta(data_dir, key, {"digest": digest, "duration": 1})
+    assert watch.pending_specials(checkout, data_dir) == []
+    assert (library.audio_dir(data_dir) / "specials" / "2026-10-25-uk.json").exists()
+    assert watch.prune(data_dir, date(2027, 1, 1), 14) == []
+    assert watch.prune_specials(checkout, data_dir) == []
+    path.unlink()
+    assert [p.name for p in watch.prune_specials(checkout, data_dir)] == ["2026-10-25-uk.json"]
+
+
+def test_render_a_special_with_a_fake_engine(checkout):
+    np = pytest.importorskip("numpy")
+    pytest.importorskip("soundfile")
+    from telex.radio import render
+
+    class Fake:
+        sample_rate = 8000
+        info = {"engine": "fake"}
+
+        def synth(self, text):
+            return np.full(len(text) * 10, 0.5, dtype=np.float32)
+
+    data_dir = checkout.parent
+    write_special(checkout)
+    key = "specials/2026-10-25-uk"
+    meta = render.render_day(checkout, data_dir, key, Fake())
+    assert meta["title"] == "UK politics" and meta["date"] == key
+    assert [c.get("label") for c in meta["chapters"]] == [
+        None,
+        "First thread",
+        "Second thread",
+        "Third thread",
+        None,
+        None,
+    ]
+    assert any("at least" in p for p in meta["problems"])
+    show = library.show_state(checkout, data_dir, key)
+    assert show.state == "ready" and show.special and show.day == DAY
+    assert [c.title for c in show.chapters][-2:] == ["Who's who", "Outro"]

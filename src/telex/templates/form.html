@@ -1,9 +1,10 @@
 {% extends "base.html" %}
-{% block title %}{{ "Edit " ~ topic.title if topic else "New topic" }} · Telex{% endblock %}
+{% block title %}{{ ("Follow " if follow else "Edit ") ~ topic.title if topic else "New topic" }} · Telex{% endblock %}
 {% block content %}
 <a class="back label" href="{{ '/t/' ~ topic.id if topic else '/' }}">← {{ "Back" if topic else "All topics" }}</a>
-<h1 class="headline">{{ "Edit topic" if topic else "New topic" }}</h1>
-{% if topic %}<p class="label muted">ID {{ topic.id }}</p>{% endif %}
+<h1 class="headline">{{ "Keep following" if follow else "Edit topic" if topic else "New topic" }}</h1>
+{% if follow %}<p class="notice">Turn this catch-up into a followed topic. Its first update builds on the catch-up. The angle you gave becomes the brief: say how it should be reported from now on.</p>
+{% elif topic %}<p class="label muted">ID {{ topic.id }}</p>{% endif %}
 
 {% if error %}<p class="notice is-error" role="alert">{{ error }}</p>{% endif %}
 

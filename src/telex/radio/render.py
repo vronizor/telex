@@ -34,13 +34,14 @@ def render(show: dict, engine, titles: dict[str, str]) -> tuple[np.ndarray, list
         if s_index:
             pieces.append(silence(SEGMENT_GAP_S, engine.sample_rate))
             elapsed += len(pieces[-1])
-        chapters.append(
-            {
-                "start": round(elapsed / engine.sample_rate, 2),
-                "kind": segment["kind"],
-                "topics": [{"id": t, "title": titles.get(t, t)} for t in segment["topics"]],
-            }
-        )
+        chapter = {
+            "start": round(elapsed / engine.sample_rate, 2),
+            "kind": segment["kind"],
+            "topics": [{"id": t, "title": titles.get(t, t)} for t in segment["topics"]],
+        }
+        if segment.get("title"):
+            chapter["label"] = segment["title"]
+        chapters.append(chapter)
         for p_index, paragraph in enumerate(segment["paragraphs"]):
             if p_index:
                 pieces.append(silence(PARAGRAPH_GAP_S, engine.sample_rate))
@@ -68,11 +69,16 @@ def encode_mp3(audio: np.ndarray, rate: int) -> bytes:
     return buffer.getvalue()
 
 
-def render_day(checkout: Path, data_dir: Path, day: date, engine) -> dict:
-    raw = (library.shows_dir(checkout) / f"{day}.md").read_bytes()
+def render_day(checkout: Path, data_dir: Path, day: library.Key, engine) -> dict:
+    path = library.script_path(checkout, day)
+    raw = path.read_bytes()
     d = dispatch(checkout)
-    show = d.parse_show(raw.decode("utf-8"))
-    check = d.check_show(checkout, library.shows_dir(checkout) / f"{day}.md")
+    if library.is_special(day):
+        show = d.parse_special(raw.decode("utf-8"))
+        check = d.check_special(checkout, path)
+    else:
+        show = d.parse_show(raw.decode("utf-8"))
+        check = d.check_show(checkout, path)
     titles = {t["id"]: t.get("title", t["id"]) for t in d.load_topics(checkout)}
     started = time.perf_counter()
     audio, chapters = render(show, engine, titles)
@@ -81,7 +87,7 @@ def render_day(checkout: Path, data_dir: Path, day: date, engine) -> dict:
         library.audio_dir(data_dir) / f"{day}.mp3", encode_mp3(audio, engine.sample_rate)
     )
     meta = {
-        "date": day.isoformat(),
+        "date": str(day),
         "digest": hashlib.sha256(raw).hexdigest()[:16],
         "duration": round(len(audio) / engine.sample_rate, 2),
         "chapters": chapters,
@@ -91,6 +97,8 @@ def render_day(checkout: Path, data_dir: Path, day: date, engine) -> dict:
         "engine": engine.info,
         "rendered": datetime.now().astimezone().isoformat(timespec="seconds"),
     }
+    if show.get("title"):
+        meta["title"] = show["title"]
     library.write_meta(data_dir, day, meta)
     return meta
 
@@ -100,15 +108,20 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="telex.radio.render")
     parser.add_argument("--checkout", type=Path, required=True)
     parser.add_argument("--data-dir", type=Path, required=True)
-    parser.add_argument("--date", type=date.fromisoformat, required=True)
+    which = parser.add_mutually_exclusive_group(required=True)
+    which.add_argument("--date", type=date.fromisoformat, help="a morning show")
+    which.add_argument("--key", help="a date, or specials/<date>-<topic>")
     args = parser.parse_args(argv)
+    key = args.date or args.key
+    if not library.is_special(key):
+        key = date.fromisoformat(str(key))
     from telex.radio.engine import from_env
 
     engine = from_env()
-    meta = render_day(args.checkout, args.data_dir, args.date, engine)
+    meta = render_day(args.checkout, args.data_dir, key, engine)
     log.info(
         "rendered %s: %.0fs of audio in %.0fs, %d words, %d check problems",
-        args.date,
+        key,
         meta["duration"],
         meta["render_s"],
         meta["words"],
