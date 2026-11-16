@@ -100,3 +100,33 @@ def test_wire_counts_new_headlines(client):
     assert 'class="is-new"' in page and "1 new</span>" in page
     assert "new on wire" not in client.get("/").text
     assert 'class="is-new"' not in client.get("/t/bcn-rent-cap").text
+
+
+def test_mark_listened_button(client):
+    day = app_module.store.now().date()
+    since((datetime.combine(day, datetime.min.time(), TZ) - timedelta(days=1)).isoformat())
+    put_show(day)
+    assert "Mark listened" in client.get("/").text
+    assert "Mark listened" in client.get(f"/radio/{day}").text
+    r = client.post(
+        f"/radio/{day}/played", data={"state": "done", "next": "/"}, follow_redirects=False
+    )
+    assert r.status_code == 303 and r.headers["location"] == "/"
+    home = client.get("/").text
+    assert f'data-show-dot="{day}"' not in home and "Mark listened" not in home
+    r = client.post(
+        f"/radio/{day}/played",
+        data={"state": "done", "next": "//evil.test"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 204
+
+
+def test_reading_every_report_clears_the_show(client):
+    day = app_module.store.now().date()
+    since((datetime.combine(day, datetime.min.time(), TZ) - timedelta(days=1)).isoformat())
+    put_show(day)
+    assert f'data-show-dot="{day}"' in client.get("/").text
+    app_module.reads.mark_report("bcn-rent-cap", day)
+    home = client.get("/").text
+    assert f'data-show-dot="{day}"' not in home and "data-tab-dot" not in home

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import item, sched, tag, dot, wire_count, DAYS %}
-{% from "_radio.html" import player %}
+{% from "_radio.html" import player, listened %}
 {% block content %}
 <p class="statusline label">
   {{ today.strftime("%a %d.%m.%y") }} · {{ topics | length }} topics
@@ -20,6 +20,7 @@
     <span class="push">Show →</span>
   </a>
   {% if show.state == "ready" %}{{ player(show, chapters, compact=true) }}{% endif %}
+  {% if show_mark %}{{ listened(show, "/") }}{% endif %}
   {% endif %}
   {% for s in fresh_specials %}
   <a class="radio-head radio-special label" href="/radio/{{ s.key }}">

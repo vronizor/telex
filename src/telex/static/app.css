@@ -393,6 +393,8 @@ h1, h2, p { margin: 0; }
 .report h3 { margin: 22px 0 6px; font-size: 18px; line-height: 1.3; font-weight: var(--headline-weight); }
 .player { display: flex; flex-direction: column; gap: 6px; margin-top: 16px; }
 .player-compact { margin-top: 6px; }
+.listened { display: flex; justify-content: flex-end; }
+.listened .btn-link { min-height: 32px; padding: 0; font-size: 11px; }
 .player-row { display: flex; align-items: center; gap: 4px; }
 .player-btn {
   display: inline-flex;

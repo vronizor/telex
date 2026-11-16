@@ -166,11 +166,20 @@ def wire_new(topic: Topic) -> int:
     return sum(is_new(i, seen) for i in items)
 
 
+def reports_read(show: radio.Show) -> bool:
+    if show.special:
+        return False
+    ids = {t["id"] for c in show.chapters if c.kind == "topic" for t in c.topics if t.get("id")}
+    return bool(ids) and all(reads.report_read(i) >= show.day for i in ids)
+
+
 def show_mark(show: radio.Show | None) -> str | None:
     if show is None or show.state != "ready":
         return None
     state = reads.show(show.key if show.special else show.day)
-    return None if state == "done" else "started" if state == "started" else "unread"
+    if state == "done" or reports_read(show):
+        return None
+    return "started" if state == "started" else "unread"
 
 
 def radio_badge(show: radio.Show | None) -> dict:
@@ -802,17 +811,29 @@ def specials(topic: str | None = None) -> list[radio.Show]:
     return radio.specials(settings.checkout, settings.data_dir, topic)
 
 
-@app.post("/radio/{day}/played")
-async def radio_played(request: Request, day: date):
-    form = await request.form()
+def played_state(form) -> str:
     state = str(form.get("state", ""))
     if state not in ("started", "done"):
         raise HTTPException(400, "state must be started or done")
+    return state
+
+
+def played_response(form) -> Response:
+    target = str(form.get("next", ""))
+    if target.startswith("/") and not target.startswith("//"):
+        return RedirectResponse(target, status_code=303)
+    return Response(status_code=204)
+
+
+@app.post("/radio/{day}/played")
+async def radio_played(request: Request, day: date):
+    form = await request.form()
+    state = played_state(form)
     if radio.show_state(settings.checkout, settings.data_dir, day) is None:
         raise HTTPException(404, "No show for that day")
     reads.mark_show(day, state)
     reads.forget_shows_before(store.now().date() - timedelta(days=settings.radio_keep_days + 7))
-    return Response(status_code=204)
+    return played_response(form)
 
 
 def special_or_404(stem: str) -> radio.Show:
@@ -825,11 +846,9 @@ def special_or_404(stem: str) -> radio.Show:
 @app.post("/radio/specials/{stem}/played")
 async def special_played(request: Request, stem: str):
     form = await request.form()
-    state = str(form.get("state", ""))
-    if state not in ("started", "done"):
-        raise HTTPException(400, "state must be started or done")
+    state = played_state(form)
     reads.mark_show(special_or_404(stem).key, state)
-    return Response(status_code=204)
+    return played_response(form)
 
 
 def home_show(today: date) -> radio.Show | None:

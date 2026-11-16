@@ -31,3 +31,11 @@
   <input class="player-seek" type="range" data-seek min="0" max="{{ show.duration | int }}" step="1" value="0" aria-label="Position in the show">
 </div>
 {%- endmacro %}
+
+{% macro listened(show, next) -%}
+<form class="listened" method="post" action="/radio/{{ show.key }}/played" data-listened="{{ show.key }}">
+  <input type="hidden" name="state" value="done">
+  <input type="hidden" name="next" value="{{ next }}">
+  <button class="btn-link label" type="submit">Mark listened</button>
+</form>
+{%- endmacro %}

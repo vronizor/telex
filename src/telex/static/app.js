@@ -133,6 +133,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const day = player.dataset.day;
       fetch(`/radio/${day}/played`, { method: "POST", body: new URLSearchParams({ state }), keepalive: true })
         .catch(() => {});
+      if (state === "done") document.querySelectorAll(`[data-listened="${day}"]`).forEach((f) => f.remove());
       document.querySelectorAll(`[data-show-dot="${day}"]`).forEach((dot) => {
         if (state === "done" || dot.hasAttribute("data-tab-dot")) {
           dot.remove();

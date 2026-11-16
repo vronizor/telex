@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_radio.html" import player, clock %}
+{% from "_radio.html" import player, clock, listened %}
 {% from "_macros.html" import dot %}
 {% block title %}Telex Radio{% if show and show.special %} · {{ show.title }}{% elif show %} · {{ show.day.strftime("%a %d %b") }}{% endif %}{% endblock %}
 {% block content %}
@@ -39,6 +39,7 @@
 
 {% if show.state == "ready" %}
 {{ player(show, chapters) }}
+{% if marks.get(show.key) %}{{ listened(show, "/radio/" ~ show.key) }}{% endif %}
 
 <h2 class="section-label label">── Running order</h2>
 <ol class="chapters">
